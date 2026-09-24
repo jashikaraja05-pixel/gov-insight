@@ -1,15 +1,58 @@
 import { CivicIssue, PolicyScenario, FutureTrend, ImpactBeforeAfter } from '../types';
+import {
+  collection,
+  doc,
+  setDoc,
+  updateDoc,
+  onSnapshot,
+  getDocs,
+} from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType } from './firebase';
 
 const STORAGE_KEY = 'govinsight_civic_issues_real_v4';
 
-// Helper to remove any lingering old mock databases
-if (typeof window !== 'undefined') {
+// Memory cache for issues
+let memoryIssues: CivicIssue[] = [];
+let isFirestoreSubscribed = false;
+
+// Initialize realtime Firestore sync
+export function initFirestoreSync() {
+  if (isFirestoreSubscribed || typeof window === 'undefined') return;
+  isFirestoreSubscribed = true;
+
   try {
-    localStorage.removeItem('govinsight_civic_issues');
-    localStorage.removeItem('govinsight_civic_issues_v2');
-  } catch {
-    // ignore
+    const issuesCollection = collection(db, 'issues');
+    onSnapshot(
+      issuesCollection,
+      (snapshot) => {
+        const remoteIssues: CivicIssue[] = [];
+        snapshot.forEach((docSnap) => {
+          remoteIssues.push(docSnap.data() as CivicIssue);
+        });
+
+        if (remoteIssues.length > 0) {
+          remoteIssues.sort(
+            (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+          );
+          memoryIssues = remoteIssues;
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(remoteIssues));
+          } catch {}
+          window.dispatchEvent(new Event('govinsight_issues_updated'));
+        }
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.GET, 'issues');
+      }
+    );
+  } catch (err) {
+    console.warn('Firestore subscription notice:', err);
   }
+}
+
+// Automatically initiate sync in client context
+if (typeof window !== 'undefined') {
+  initFirestoreSync();
 }
 
 export const INITIAL_SEEDED_ISSUES: CivicIssue[] = [
@@ -535,6 +578,9 @@ export const IMPACT_METRICS: ImpactBeforeAfter[] = [
 ];
 
 export function getStoredIssues(): CivicIssue[] {
+  if (memoryIssues.length > 0) {
+    return memoryIssues;
+  }
   if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -543,15 +589,8 @@ export function getStoredIssues(): CivicIssue[] {
     }
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      // Filter out any mock seeded items if they somehow exist
-      return parsed.filter(
-        (item: CivicIssue) =>
-          !item.id.includes('000123') &&
-          !item.id.includes('000032') &&
-          !item.id.includes('000031') &&
-          !item.id.includes('000030') &&
-          !item.id.includes('000029')
-      );
+      memoryIssues = parsed;
+      return parsed;
     }
     return [];
   } catch {
@@ -560,6 +599,7 @@ export function getStoredIssues(): CivicIssue[] {
 }
 
 export function clearStoredIssues(): void {
+  memoryIssues = [];
   if (typeof window !== 'undefined') {
     localStorage.removeItem(STORAGE_KEY);
     window.dispatchEvent(new Event('govinsight_issues_updated'));
@@ -574,11 +614,24 @@ export function saveIssue(issue: CivicIssue): void {
   } else {
     issues.unshift(issue);
   }
+  memoryIssues = [...issues];
+
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(issues));
     window.dispatchEvent(new Event('govinsight_issues_updated'));
   } catch (e) {
     console.error('Failed to save issue to localStorage', e);
+  }
+
+  // Persist directly to Firebase Firestore
+  const pathForWrite = `issues/${issue.id}`;
+  try {
+    const cleanData = JSON.parse(JSON.stringify(issue));
+    setDoc(doc(db, 'issues', issue.id), cleanData, { merge: true }).catch((err) => {
+      console.warn('Firestore async save notice:', err);
+    });
+  } catch (err) {
+    console.warn('Firestore prepare doc notice:', err);
   }
 }
 
@@ -606,6 +659,25 @@ export function updateIssueStatus(
   });
 
   saveIssue(issue);
+
+  // Sync status update directly to Firestore
+  const pathForUpdate = `issues/${id}`;
+  try {
+    const updatePayload: Record<string, any> = {
+      status: newStatus,
+      updatedAt: issue.updatedAt,
+      timeline: issue.timeline,
+    };
+    if (resolutionPhotoUrl) {
+      updatePayload.resolutionPhotoUrl = resolutionPhotoUrl;
+    }
+    updateDoc(doc(db, 'issues', id), updatePayload).catch((err) => {
+      console.warn('Firestore updateDoc notice:', err);
+    });
+  } catch (err) {
+    console.warn('Firestore async status update error:', err);
+  }
+
   return issue;
 }
 
@@ -627,5 +699,33 @@ export function submitCitizenFeedback(
   };
 
   saveIssue(issue);
+
+  try {
+    updateDoc(doc(db, 'issues', id), {
+      citizenFeedback: issue.citizenFeedback,
+    }).catch((err) => {
+      console.warn('Firestore updateFeedback notice:', err);
+    });
+  } catch (err) {
+    console.warn('Firestore async feedback update error:', err);
+  }
+
   return issue;
+}
+
+/**
+ * Seeds initial civic cases to Firestore to demonstrate the live backend in the Firebase Console
+ */
+export async function seedInitialIssuesToFirestore(): Promise<number> {
+  let count = 0;
+  for (const issue of INITIAL_SEEDED_ISSUES) {
+    try {
+      const cleanData = JSON.parse(JSON.stringify(issue));
+      await setDoc(doc(db, 'issues', issue.id), cleanData, { merge: true });
+      count++;
+    } catch (err) {
+      console.warn(`Failed to seed issue ${issue.id} to Firestore:`, err);
+    }
+  }
+  return count;
 }

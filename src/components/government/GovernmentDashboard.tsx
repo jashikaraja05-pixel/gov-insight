@@ -12,6 +12,7 @@ import { t } from '../../services/i18n';
 import {
   getStoredIssues,
   updateIssueStatus,
+  seedInitialIssuesToFirestore,
   POLICY_SCENARIOS,
   FUTURE_TRENDS,
   IMPACT_METRICS,
@@ -47,6 +48,7 @@ import {
   Unlock,
   Shield,
   HelpCircle,
+  Database,
 } from 'lucide-react';
 import {
   translateReport,
@@ -87,6 +89,8 @@ export const GovernmentDashboard: React.FC<GovernmentDashboardProps> = ({
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterDepartment, setFilterDepartment] = useState<string>('all');
   const [selectedCase, setSelectedCase] = useState<CivicIssue | null>(null);
+  const [isSeeding, setIsSeeding] = useState(false);
+  const [seedMessage, setSeedMessage] = useState('');
 
   // Multilingual voice translation engine state
   const [listenLanguage, setListenLanguage] = useState<string>('ta');
@@ -243,7 +247,24 @@ export const GovernmentDashboard: React.FC<GovernmentDashboardProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center flex-wrap gap-2">
+            <button
+              onClick={async () => {
+                setIsSeeding(true);
+                setSeedMessage('Writing to Firestore...');
+                const count = await seedInitialIssuesToFirestore();
+                setIsSeeding(false);
+                setSeedMessage(`Synced ${count} cases to Firebase!`);
+                setTimeout(() => setSeedMessage(''), 3500);
+                refreshIssues();
+              }}
+              disabled={isSeeding}
+              title="Populate or sync sample civic cases directly into your Firebase Console Firestore"
+              className="px-3 py-1.5 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/40 text-xs font-semibold text-emerald-300 flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+            >
+              <Database className="w-3.5 h-3.5 text-emerald-400" />
+              <span>{isSeeding ? 'Writing to Firestore...' : seedMessage || 'Sync to Firebase Console'}</span>
+            </button>
             <button
               onClick={onOpenResponsibleAi}
               className="px-3 py-1.5 rounded-lg bg-red-950/50 hover:bg-red-900/60 border border-red-500/30 text-xs font-semibold text-red-300 flex items-center gap-1.5 transition-colors"
