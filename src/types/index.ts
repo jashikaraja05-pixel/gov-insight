@@ -42,6 +42,45 @@ export interface CitizenFeedback {
   timestamp: string;
 }
 
+export interface UserFeedback {
+  id: string;
+  userId: string;
+  userName?: string;
+  userEmail?: string;
+  userRole?: 'citizen' | 'government' | 'visitor';
+  category?: 'platform' | 'government_action' | 'civic_service' | 'ai_accuracy' | 'resolution' | 'general' | string;
+  rating: number; // 1 to 5
+  comment: string;
+  issueId?: string;
+  issueTitle?: string;
+  resolved?: boolean;
+  createdAt: string;
+}
+
+export type PolicyPriority = 'URGENT' | 'HIGH' | 'REGULAR';
+export type PolicyScope = 'district' | 'state' | 'national';
+
+export interface GovernmentPolicy {
+  id: string;
+  title: string;
+  summary: string;
+  fullContent?: string;
+  category: string;
+  department: string;
+  gazetteRef?: string;
+  scope: PolicyScope;
+  affectedCountry: string;
+  affectedState: string;
+  affectedDistrict?: string; // 'Chennai', 'Coimbatore', 'All Districts', etc.
+  affectedAreas?: string[]; // Specific wards or neighborhoods
+  priority: PolicyPriority;
+  actionRequiredForCitizen?: string;
+  effectiveDate?: string;
+  publishedAt: string;
+  officialDocumentUrl?: string;
+  isRead?: boolean;
+}
+
 export interface CivicIssue {
   id: string; // e.g. GI-2026-000123
   title: string;
@@ -77,6 +116,7 @@ export interface CivicIssue {
   timeline: TimelineEvent[];
   citizenFeedback?: CitizenFeedback;
   affectedPopulationEstimate: number;
+  userId?: string;
   createdAt: string;
   updatedAt: string;
   evidenceTypes: ('voice' | 'text' | 'photo' | 'gps')[];

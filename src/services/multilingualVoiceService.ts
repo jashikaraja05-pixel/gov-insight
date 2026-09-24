@@ -374,5 +374,5 @@ export function speakCivicText(params: {
 
 export function isSpeaking(): boolean {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return false;
-  return window.speechSynthesis.speaking;
+  return window.speechSynthesis.speaking || activeUtterance !== null;
 }

@@ -5,9 +5,9 @@ import {
   setDoc,
   updateDoc,
   onSnapshot,
-  getDocs,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
+import { storeUserFeedback } from './feedbackService';
 
 const STORAGE_KEY = 'govinsight_civic_issues_real_v4';
 
@@ -628,7 +628,7 @@ export function saveIssue(issue: CivicIssue): void {
   try {
     const cleanData = JSON.parse(JSON.stringify(issue));
     setDoc(doc(db, 'issues', issue.id), cleanData, { merge: true }).catch((err) => {
-      console.warn('Firestore async save notice:', err);
+      handleFirestoreError(err, OperationType.WRITE, pathForWrite);
     });
   } catch (err) {
     console.warn('Firestore prepare doc notice:', err);
@@ -672,7 +672,7 @@ export function updateIssueStatus(
       updatePayload.resolutionPhotoUrl = resolutionPhotoUrl;
     }
     updateDoc(doc(db, 'issues', id), updatePayload).catch((err) => {
-      console.warn('Firestore updateDoc notice:', err);
+      handleFirestoreError(err, OperationType.UPDATE, pathForUpdate);
     });
   } catch (err) {
     console.warn('Firestore async status update error:', err);
@@ -699,6 +699,25 @@ export function submitCitizenFeedback(
   };
 
   saveIssue(issue);
+
+  // Mirror to dedicated /feedback collection via feedbackService
+  try {
+    storeUserFeedback({
+      userId: issue.userId || 'citizen_user',
+      userName: `Citizen (${issue.location.city || 'Local'})`,
+      userRole: 'citizen',
+      category: 'resolution',
+      rating,
+      comment: comment || (resolved ? 'Grievance was marked as satisfactorily resolved.' : 'Follow-up requested by citizen.'),
+      issueId: id,
+      issueTitle: issue.title,
+      resolved,
+    }).catch((err) => {
+      console.warn('Feedback service sync notice:', err);
+    });
+  } catch (err) {
+    console.warn('Async feedback dispatch error:', err);
+  }
 
   try {
     updateDoc(doc(db, 'issues', id), {

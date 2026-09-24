@@ -90,6 +90,131 @@
         }
       },
       "required": ["uid", "role"]
+    },
+    "UserFeedback": {
+      "title": "UserFeedback",
+      "description": "User feedback, experience ratings, satisfaction evaluations, and recommendations",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique feedback ID"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Auth UID or anonymous submission identifier of the author"
+        },
+        "userName": {
+          "type": "string",
+          "description": "Name or handle of user giving feedback"
+        },
+        "userRole": {
+          "type": "string",
+          "enum": ["citizen", "government", "visitor"],
+          "description": "Role of the feedback author"
+        },
+        "category": {
+          "type": "string",
+          "description": "Feedback category e.g. platform, government_action, civic_service, ai_accuracy, resolution"
+        },
+        "rating": {
+          "type": "number",
+          "description": "Satisfaction rating from 1 to 5 stars"
+        },
+        "comment": {
+          "type": "string",
+          "maxLength": 2000,
+          "description": "Citizen or official commentary and feedback text"
+        },
+        "issueId": {
+          "type": "string",
+          "description": "Optional associated civic issue ID"
+        },
+        "resolved": {
+          "type": "boolean",
+          "description": "Whether the user feels their grievance was satisfactorily resolved"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Submission ISO timestamp"
+        }
+      },
+      "required": ["id", "userId", "rating", "comment", "createdAt"]
+    },
+    "GovernmentPolicy": {
+      "title": "GovernmentPolicy",
+      "description": "Government policy announcements, gazettes, and civic directives affecting specific jurisdictions",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique policy identifier"
+        },
+        "title": {
+          "type": "string",
+          "description": "Policy title or gazette headline"
+        },
+        "summary": {
+          "type": "string",
+          "description": "Executive summary of the policy"
+        },
+        "fullContent": {
+          "type": "string",
+          "description": "Full policy directives and citizen instructions"
+        },
+        "category": {
+          "type": "string",
+          "description": "Policy category e.g. Infrastructure, Water, Energy, Health, Disaster Preparedness"
+        },
+        "department": {
+          "type": "string",
+          "description": "Issuing government department"
+        },
+        "gazetteRef": {
+          "type": "string",
+          "description": "Official government order reference number"
+        },
+        "scope": {
+          "type": "string",
+          "enum": ["district", "state", "national"],
+          "description": "Jurisdiction scope"
+        },
+        "affectedCountry": {
+          "type": "string",
+          "description": "Country affected"
+        },
+        "affectedState": {
+          "type": "string",
+          "description": "State affected"
+        },
+        "affectedDistrict": {
+          "type": "string",
+          "description": "District affected, or All Districts"
+        },
+        "affectedAreas": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Specific wards, zones, or areas affected"
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["URGENT", "HIGH", "REGULAR"],
+          "description": "Urgency priority level"
+        },
+        "actionRequiredForCitizen": {
+          "type": "string",
+          "description": "Specific action required from citizen"
+        },
+        "effectiveDate": {
+          "type": "string",
+          "description": "Effective implementation date"
+        },
+        "publishedAt": {
+          "type": "string",
+          "description": "Publication timestamp"
+        }
+      },
+      "required": ["id", "title", "summary", "category", "department", "scope", "affectedState", "priority", "publishedAt"]
     }
   },
   "firestore": {
@@ -104,6 +229,14 @@
     "/admins/{adminId}": {
       "schema": "UserProfile",
       "description": "Designated administrator records"
+    },
+    "/feedback/{feedbackId}": {
+      "schema": "UserFeedback",
+      "description": "Citizen and official feedback submissions"
+    },
+    "/policies/{policyId}": {
+      "schema": "GovernmentPolicy",
+      "description": "Government policy directives and area alerts"
     }
   }
 }

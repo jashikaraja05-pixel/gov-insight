@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { GovInsightLogo } from './GovInsightLogo';
 import { SUPPORTED_LANGUAGES, COUNTRY_PROFILES, t } from '../../services/i18n';
 import { SupportedLanguage, CountryProfile } from '../../types';
-import { Globe, Shield, Users, Building2, ChevronDown, Check, Sparkles, Menu, X, Radio } from 'lucide-react';
+import { Globe, Shield, Users, Building2, ChevronDown, Check, Sparkles, Menu, X, Radio, MessageSquare } from 'lucide-react';
 
 interface NavbarProps {
   currentView: 'landing' | 'auth' | 'people' | 'government';
@@ -12,6 +12,7 @@ interface NavbarProps {
   currentCountry: CountryProfile;
   onCountryChange: (country: CountryProfile) => void;
   onOpenResponsibleAi: () => void;
+  onOpenFeedback?: () => void;
   isLoggedIn?: boolean;
 }
 
@@ -23,6 +24,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentCountry,
   onCountryChange,
   onOpenResponsibleAi,
+  onOpenFeedback,
   isLoggedIn = false,
 }) => {
   const [isLangOpen, setIsLangOpen] = useState(false);
@@ -42,6 +44,18 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Right Action Tools: Language, Country & AI Oversight */}
         <div className="flex items-center gap-2.5">
+          {/* User Feedback Button */}
+          {onOpenFeedback && (
+            <button
+              onClick={onOpenFeedback}
+              title="Give and view citizen feedback stored in Firestore"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-500/30 text-[11px] font-medium text-emerald-300 transition-colors cursor-pointer"
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden sm:inline">Feedback</span>
+            </button>
+          )}
+
           {/* Responsible AI Button */}
           <button
             onClick={onOpenResponsibleAi}

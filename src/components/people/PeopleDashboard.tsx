@@ -6,6 +6,7 @@ import {
   CaseStatus,
   CIVIC_SECTOR_THEMES,
   CivicSectorTheme,
+  GovernmentPolicy,
 } from '../../types';
 import { t, SUPPORTED_LANGUAGES } from '../../services/i18n';
 import {
@@ -28,6 +29,22 @@ import {
   VoiceAssistantAnalysis,
 } from '../../services/voiceAssistantService';
 import { FriendlyVoiceBuddyModal } from './FriendlyVoiceBuddyModal';
+import { CitizenEngagementHeatmap } from './CitizenEngagementHeatmap';
+import { PolicyNotificationBanner } from './PolicyNotificationBanner';
+import { PolicyAlertsDrawer } from './PolicyAlertsDrawer';
+import { CitizenSentimentMiniDashboard } from './CitizenSentimentMiniDashboard';
+import { SentimentSummaryCard } from './SentimentSummaryCard';
+import {
+  GeminiSentimentAnalysisResult,
+  analyzeFeedbackSentiment,
+  getCachedSentiment,
+} from '../../services/sentimentService';
+import { subscribeToUserFeedback } from '../../services/feedbackService';
+import {
+  subscribeToAreaPolicies,
+  getReadPolicyIds,
+} from '../../services/policyService';
+import { exportEngagementReportPDF } from '../../services/pdfReportService';
 import { searchAddressOrLandmark } from '../../services/geocodingService';
 import { GlobalMap } from '../common/GlobalMap';
 import {
@@ -36,6 +53,9 @@ import {
   Camera,
   MapPin,
   FileText,
+  Flame,
+  FileDown,
+  Bell,
   Volume2,
   VolumeX,
   CheckCircle2,
@@ -68,6 +88,8 @@ import {
   Trash2,
   X,
   Languages,
+  Smile,
+  BrainCircuit,
 } from 'lucide-react';
 import {
   getStatesForCountry,
@@ -96,7 +118,7 @@ export const PeopleDashboard: React.FC<PeopleDashboardProps> = ({
   onSwitchToGov,
   userData,
 }) => {
-  const [activeTab, setActiveTab] = useState<'report' | 'my-reports' | 'nearby' | 'updates'>('report');
+  const [activeTab, setActiveTab] = useState<'report' | 'my-reports' | 'nearby' | 'trends' | 'sentiment' | 'updates'>('report');
 
   // Input states
   const [selectedTheme, setSelectedTheme] = useState<CivicSectorTheme | null>(null);
@@ -159,6 +181,71 @@ export const PeopleDashboard: React.FC<PeopleDashboardProps> = ({
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Real-time Government Policy Alerts states
+  const [areaPolicies, setAreaPolicies] = useState<GovernmentPolicy[]>([]);
+  const [activeBannerPolicy, setActiveBannerPolicy] = useState<GovernmentPolicy | null>(null);
+  const [isPolicyDrawerOpen, setIsPolicyDrawerOpen] = useState(false);
+
+  // Subscribe to real-time government policy publications affecting this citizen's area
+  useEffect(() => {
+    const currentArea = {
+      country: incidentCountry || userCountry,
+      state: incidentState || userState,
+      district: incidentDistrict || userDistrict,
+    };
+
+    const unsubscribe = subscribeToAreaPolicies(currentArea, (policies, newAlert) => {
+      setAreaPolicies(policies);
+      if (newAlert) {
+        setActiveBannerPolicy(newAlert);
+      }
+    });
+
+    const handleReadUpdated = () => {
+      setAreaPolicies((prev) => {
+        const readIds = getReadPolicyIds();
+        return prev.map((p) => ({ ...p, isRead: readIds.includes(p.id) }));
+      });
+    };
+
+    const handleManualNewPolicy = (e: any) => {
+      if (e.detail) {
+        setActiveBannerPolicy(e.detail);
+      }
+    };
+
+    window.addEventListener('govinsight_policy_read_updated', handleReadUpdated);
+    window.addEventListener('govinsight_new_policy_published', handleManualNewPolicy);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('govinsight_policy_read_updated', handleReadUpdated);
+      window.removeEventListener('govinsight_new_policy_published', handleManualNewPolicy);
+    };
+  }, [incidentCountry, incidentState, incidentDistrict, userCountry, userState, userDistrict]);
+
+  const unreadPolicyCount = areaPolicies.filter((p) => !p.isRead).length;
+
+  // Real-time Citizen Feedback Sentiment (Gemini API)
+  const [sentimentResult, setSentimentResult] = useState<GeminiSentimentAnalysisResult | null>(getCachedSentiment());
+  const [isAnalyzingSentiment, setIsAnalyzingSentiment] = useState(false);
+
+  useEffect(() => {
+    const unsubFeedback = subscribeToUserFeedback((feedbacks) => {
+      if (feedbacks && feedbacks.length > 0) {
+        analyzeFeedbackSentiment(feedbacks, `${incidentDistrict || userDistrict}, ${incidentState || userState}`).then(
+          (analysis) => {
+            setSentimentResult(analysis);
+          }
+        );
+      }
+    });
+
+    return () => {
+      if (typeof unsubFeedback === 'function') unsubFeedback();
+    };
+  }, [incidentDistrict, incidentState, userDistrict, userState]);
 
   const handleIncidentStateChange = async (newState: string) => {
     setIncidentState(newState);
@@ -776,6 +863,36 @@ export const PeopleDashboard: React.FC<PeopleDashboardProps> = ({
     setTimeout(() => setFeedbackSuccess(false), 3000);
   };
 
+  // PDF Report Export states and handler
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [pdfExportSuccess, setPdfExportSuccess] = useState(false);
+
+  const handleDashboardExportPDF = async () => {
+    setIsExportingPdf(true);
+    try {
+      await exportEngagementReportPDF({
+        totalInteractions: 1420 + issuesList.length * 3,
+        totalVoice: Math.round((1420 + issuesList.length * 3) * 0.42),
+        totalReports: 1420 - Math.round(1420 * 0.28),
+        totalFeedback: Math.round(1420 * 0.28),
+        peakHour: '09:00 - 11:30 AM',
+        peakDay: 'Wednesday',
+        voicePercentage: 42,
+        momentum: '+26.4%',
+        selectedSector: 'All Sectors',
+        viewMode: '30days',
+        metricFilter: 'all',
+        region: `${incidentDistrict || userDistrict || 'Chennai'}, ${incidentState || userState || 'Tamil Nadu'}`,
+      });
+      setPdfExportSuccess(true);
+      setTimeout(() => setPdfExportSuccess(false), 3500);
+    } catch (err) {
+      console.error('Failed to export PDF from dashboard:', err);
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#07080B] text-slate-100 py-6 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -827,6 +944,70 @@ export const PeopleDashboard: React.FC<PeopleDashboardProps> = ({
             >
               <MapPin className="w-3.5 h-3.5" />
               <span>{t('nearbyIssues', currentLanguage.code)}</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('trends')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
+                activeTab === 'trends'
+                  ? 'bg-red-600 text-white shadow-[0_0_12px_rgba(239,68,68,0.5)]'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Flame className="w-3.5 h-3.5 text-amber-400" />
+              <span>Engagement Trends</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('sentiment')}
+              title="Gemini AI Citizen Sentiment & Feedback Intelligence"
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
+                activeTab === 'sentiment'
+                  ? 'bg-red-600 text-white shadow-[0_0_12px_rgba(239,68,68,0.5)]'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <BrainCircuit className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Public Sentiment</span>
+              {sentimentResult && (
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-950 text-emerald-300 border border-emerald-500/30">
+                  {sentimentResult.positivePercentage}%
+                </span>
+              )}
+            </button>
+            <button
+              onClick={handleDashboardExportPDF}
+              disabled={isExportingPdf}
+              title="Download Citizen Engagement Trends as PDF"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white shadow-[0_0_12px_rgba(239,68,68,0.35)] disabled:opacity-50 cursor-pointer ml-1"
+            >
+              {isExportingPdf ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Exporting...</span>
+                </>
+              ) : pdfExportSuccess ? (
+                <>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
+                  <span>PDF Downloaded!</span>
+                </>
+              ) : (
+                <>
+                  <FileDown className="w-3.5 h-3.5 text-red-100" />
+                  <span>Export PDF</span>
+                </>
+              )}
+            </button>
+            <button
+              onClick={() => setIsPolicyDrawerOpen(true)}
+              title="Real-time Government Policy Alerts for your area"
+              className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all bg-black/80 hover:bg-slate-800 text-slate-200 hover:text-white border border-red-500/40 shadow-[0_0_12px_rgba(239,68,68,0.25)] cursor-pointer ml-1"
+            >
+              <Bell className="w-3.5 h-3.5 text-red-400" />
+              <span>Area Policy Alerts</span>
+              {unreadPolicyCount > 0 && (
+                <span className="w-4 h-4 rounded-full bg-red-600 text-white text-[9px] font-black font-mono flex items-center justify-center animate-pulse">
+                  {unreadPolicyCount}
+                </span>
+              )}
             </button>
           </div>
         </div>
@@ -922,6 +1103,20 @@ export const PeopleDashboard: React.FC<PeopleDashboardProps> = ({
                     </span>
                   </button>
                 </div>
+
+                {/* GEMINI-POWERED CITIZEN SENTIMENT SUMMARY CARD */}
+                <SentimentSummaryCard
+                  sentiment={sentimentResult}
+                  isLoading={isAnalyzingSentiment}
+                  onRefresh={async () => {
+                    setIsAnalyzingSentiment(true);
+                    const res = await analyzeFeedbackSentiment([], `${incidentDistrict || userDistrict}, ${incidentState || userState}`);
+                    setSentimentResult(res);
+                    setIsAnalyzingSentiment(false);
+                  }}
+                  onOpenFullDashboard={() => setActiveTab('sentiment')}
+                  compact={true}
+                />
 
                 {/* HERO SECTION */}
                 <div className="p-6 sm:p-10 rounded-3xl bg-gradient-to-b from-slate-900 via-[#0c0f18] to-slate-950 border border-white/10 shadow-2xl relative overflow-hidden">
@@ -2255,6 +2450,26 @@ export const PeopleDashboard: React.FC<PeopleDashboardProps> = ({
           </div>
         )}
 
+        {/* TAB 4: CITIZEN ENGAGEMENT TRENDS D3 HEATMAP */}
+        {activeTab === 'trends' && (
+          <CitizenEngagementHeatmap
+            currentLanguage={currentLanguage}
+            onSelectDateOrIssue={(dateStr) => {
+              console.log('Selected engagement heatmap window:', dateStr);
+            }}
+          />
+        )}
+
+        {/* TAB 5: GEMINI-POWERED CITIZEN SENTIMENT & FEEDBACK MINI-DASHBOARD */}
+        {activeTab === 'sentiment' && (
+          <CitizenSentimentMiniDashboard
+            currentLanguage={currentLanguage}
+            userDistrict={incidentDistrict || userDistrict}
+            userState={incidentState || userState}
+            userData={userData}
+          />
+        )}
+
         {/* ZERO-LITERACY FRIENDLY VOICE AI BUDDY MODAL */}
         <FriendlyVoiceBuddyModal
           isOpen={isVoiceBuddyOpen}
@@ -2273,6 +2488,28 @@ export const PeopleDashboard: React.FC<PeopleDashboardProps> = ({
             refreshIssues();
             setSelectedMyIssue(newIssue);
             setActiveTab('my-reports');
+          }}
+        />
+
+        {/* REAL-TIME POLICY NOTIFICATION FLOATING BANNER */}
+        <PolicyNotificationBanner
+          policy={activeBannerPolicy}
+          onViewPolicy={() => {
+            setActiveBannerPolicy(null);
+            setIsPolicyDrawerOpen(true);
+          }}
+          onDismiss={() => setActiveBannerPolicy(null)}
+        />
+
+        {/* REAL-TIME POLICY ALERTS & GAZETTES DRAWER */}
+        <PolicyAlertsDrawer
+          isOpen={isPolicyDrawerOpen}
+          onClose={() => setIsPolicyDrawerOpen(false)}
+          policies={areaPolicies}
+          userLocation={{
+            country: incidentCountry || userCountry,
+            state: incidentState || userState,
+            district: incidentDistrict || userDistrict,
           }}
         />
       </div>

@@ -59,5 +59,33 @@ service cloud.firestore {
       // Only administrators can delete records
       allow delete: if isAdmin();
     }
+
+    // User Feedback Collection
+    match /feedback/{feedbackId} {
+      // Transparency: Citizens and officials can read public feedback and satisfaction scores
+      allow read: if true;
+
+      // Authenticated users can submit feedback
+      allow create: if isSignedIn() && isValidId(feedbackId);
+
+      // Author or Admin can update or delete
+      allow update: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Government Policies & Area Alerts Collection
+    match /policies/{policyId} {
+      // Transparency: Citizens can read official policies, directives, and alerts affecting their area
+      allow read: if true;
+
+      // Government officials and authenticated administrators can publish policies
+      allow create: if isSignedIn() && isValidId(policyId);
+
+      // Authenticated officials or admins can update policy details
+      allow update: if isSignedIn();
+
+      // Only administrators can delete policy records
+      allow delete: if isAdmin();
+    }
   }
 }

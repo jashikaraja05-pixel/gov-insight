@@ -5,6 +5,7 @@ import { AuthScreen } from './components/auth/AuthScreen';
 import { PeopleDashboard } from './components/people/PeopleDashboard';
 import { GovernmentDashboard } from './components/government/GovernmentDashboard';
 import { ResponsibleAIModal } from './components/common/ResponsibleAIModal';
+import { FeedbackModal } from './components/common/FeedbackModal';
 import { GovInsightLogo } from './components/common/GovInsightLogo';
 import { SUPPORTED_LANGUAGES, COUNTRY_PROFILES, t } from './services/i18n';
 import { SupportedLanguage, CountryProfile } from './types';
@@ -15,6 +16,7 @@ export default function App() {
   const [currentLanguage, setCurrentLanguage] = useState<SupportedLanguage>(SUPPORTED_LANGUAGES[0]); // English default
   const [currentCountry, setCurrentCountry] = useState<CountryProfile>(COUNTRY_PROFILES[0]); // India default
   const [isResponsibleAiOpen, setIsResponsibleAiOpen] = useState<boolean>(false);
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
 
@@ -49,6 +51,7 @@ export default function App() {
         currentCountry={currentCountry}
         onCountryChange={(country) => setCurrentCountry(country)}
         onOpenResponsibleAi={() => setIsResponsibleAiOpen(true)}
+        onOpenFeedback={() => setIsFeedbackOpen(true)}
         isLoggedIn={isLoggedIn}
       />
 
@@ -134,6 +137,12 @@ export default function App() {
       <ResponsibleAIModal
         isOpen={isResponsibleAiOpen}
         onClose={() => setIsResponsibleAiOpen(false)}
+      />
+
+      {/* User Feedback & Firestore Satisfaction Modal */}
+      <FeedbackModal
+        isOpen={isFeedbackOpen}
+        onClose={() => setIsFeedbackOpen(false)}
       />
     </div>
   );

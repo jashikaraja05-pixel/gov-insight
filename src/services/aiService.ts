@@ -224,11 +224,20 @@ export async function analyzeCivicReport(params: {
   if (isHealthcareConnected || lower.includes('ambulance') || lower.includes('emergency')) {
     criticalityReasons.push('Healthcare & Emergency accessibility directly impaired');
   }
+  if (isFoodRation) {
+    criticalityReasons.push('Essential PDS food distribution and civil supplies corridor affected');
+  }
+  if (isPublicSafety) {
+    criticalityReasons.push('Public safety risk and potential physical danger flagged');
+  }
   if (lower.includes('flood') || lower.includes('burst') || lower.includes('collapse') || lower.includes('danger')) {
     criticalityReasons.push('Severe structural degradation posing immediate physical danger');
   }
   if (photoAnalysis && photoAnalysis.severity === 'CRITICAL') {
     criticalityReasons.push(`Photographic AI confirmation: ${photoAnalysis.detectedObject} (${photoAnalysis.confidence}% confidence)`);
+  }
+  if (hasPhoto) {
+    criticalityReasons.push('Verified photographic civic evidence attached');
   }
   if (location.city || location.district) {
     criticalityReasons.push(`High population density corridor in ${location.city || location.state || 'urban center'}`);
