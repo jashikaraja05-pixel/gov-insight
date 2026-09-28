@@ -2,6 +2,7 @@ import React from 'react';
 import { GovInsightLogo } from '../common/GovInsightLogo';
 import { SupportedLanguage } from '../../types';
 import { t } from '../../services/i18n';
+import { handleCivicImageError } from '../../utils/imageFallback';
 import {
   ArrowRight,
   Sparkles,
@@ -37,6 +38,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
             <img
               src="/hero-banner.jpg"
               alt="GOVINSIGHT - Global Civic Intelligence Platform"
+              onError={(e) => handleCivicImageError(e, 'hero')}
               className="w-full h-full object-cover object-center filter brightness-95 contrast-105"
             />
             {/* Gradient Overlays for High-Tech Contrast */}

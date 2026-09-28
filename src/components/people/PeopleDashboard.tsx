@@ -34,6 +34,8 @@ import { PolicyNotificationBanner } from './PolicyNotificationBanner';
 import { PolicyAlertsDrawer } from './PolicyAlertsDrawer';
 import { CitizenSentimentMiniDashboard } from './CitizenSentimentMiniDashboard';
 import { SentimentSummaryCard } from './SentimentSummaryCard';
+import { PolicyPredictiveModuleTab } from './PolicyPredictiveModuleTab';
+import { LanguageDiagnosticsModal } from '../common/LanguageDiagnosticsModal';
 import {
   GeminiSentimentAnalysisResult,
   analyzeFeedbackSentiment,
@@ -44,7 +46,8 @@ import {
   subscribeToAreaPolicies,
   getReadPolicyIds,
 } from '../../services/policyService';
-import { exportEngagementReportPDF } from '../../services/pdfReportService';
+import { exportEngagementReportPDF, exportPolicyImpactReportPDF } from '../../services/pdfReportService';
+import { getCitizenInterests, predictBatchPoliciesImpact } from '../../services/policyImpactService';
 import { searchAddressOrLandmark } from '../../services/geocodingService';
 import { GlobalMap } from '../common/GlobalMap';
 import {
@@ -71,6 +74,7 @@ import {
   ChevronRight,
   ThumbsUp,
   ThumbsDown,
+  Activity,
   Star,
   Layers,
   ArrowRight,
@@ -132,9 +136,14 @@ export const PeopleDashboard: React.FC<PeopleDashboardProps> = ({
   const [isSynthesizingSpeech, setIsSynthesizingSpeech] = useState(false);
   const [isVoiceBuddyOpen, setIsVoiceBuddyOpen] = useState(false);
   const [speakLanguageCode, setSpeakLanguageCode] = useState<string>(
-    currentLanguage.code === 'en' ? 'ta' : currentLanguage.code
+    currentLanguage.code || 'en'
   );
+
+  useEffect(() => {
+    setSpeakLanguageCode(currentLanguage.code || 'en');
+  }, [currentLanguage.code]);
   const [autoMapNotice, setAutoMapNotice] = useState<string>('');
+  const [isLanguageDiagnosticsOpen, setIsLanguageDiagnosticsOpen] = useState<boolean>(false);
 
   // Photo states
   const [selectedPhotoUrl, setSelectedPhotoUrl] = useState<string>('');
@@ -461,7 +470,7 @@ export const PeopleDashboard: React.FC<PeopleDashboardProps> = ({
     if (SpeechRecognition) {
       try {
         const recognition = new SpeechRecognition();
-        const activeSpeechLang = speakLanguageCode || (currentLanguage.code === 'en' ? 'ta' : currentLanguage.code);
+        const activeSpeechLang = speakLanguageCode || currentLanguage.code || 'en';
         const localeMap: Record<string, string> = {
           ta: 'ta-IN',
           ml: 'ml-IN',
@@ -531,7 +540,7 @@ export const PeopleDashboard: React.FC<PeopleDashboardProps> = ({
   const handleProcessSpokenText = async (spoken: string) => {
     if (!spoken.trim()) return;
 
-    const activeSpeechLang = speakLanguageCode || (currentLanguage.code === 'en' ? 'ta' : currentLanguage.code);
+    const activeSpeechLang = speakLanguageCode || currentLanguage.code || 'en';
 
     // Check if user is confirming/submitting
     if (isSubmitCommand(spoken, activeSpeechLang as any) && analysisResult) {
@@ -595,7 +604,7 @@ export const PeopleDashboard: React.FC<PeopleDashboardProps> = ({
 
   const handleReplayAIVoice = () => {
     if (!aiAssistantReply) return;
-    const activeSpeechLang = speakLanguageCode || (currentLanguage.code === 'en' ? 'ta' : currentLanguage.code);
+    const activeSpeechLang = speakLanguageCode || currentLanguage.code || 'en';
     setIsAiSpeaking(true);
     speakAIAssistantVoice(aiAssistantReply, activeSpeechLang, () => {
       setIsAiSpeaking(false);
@@ -870,20 +879,55 @@ export const PeopleDashboard: React.FC<PeopleDashboardProps> = ({
   const handleDashboardExportPDF = async () => {
     setIsExportingPdf(true);
     try {
-      await exportEngagementReportPDF({
-        totalInteractions: 1420 + issuesList.length * 3,
-        totalVoice: Math.round((1420 + issuesList.length * 3) * 0.42),
-        totalReports: 1420 - Math.round(1420 * 0.28),
-        totalFeedback: Math.round(1420 * 0.28),
-        peakHour: '09:00 - 11:30 AM',
-        peakDay: 'Wednesday',
-        voicePercentage: 42,
-        momentum: '+26.4%',
-        selectedSector: 'All Sectors',
-        viewMode: '30days',
-        metricFilter: 'all',
-        region: `${incidentDistrict || userDistrict || 'Chennai'}, ${incidentState || userState || 'Tamil Nadu'}`,
-      });
+      if (activeTab === 'updates') {
+        // Compile Policy Summaries and Impact Scores into formatted PDF
+        const interests = getCitizenInterests(userData);
+        const impactMap = await predictBatchPoliciesImpact(areaPolicies, interests);
+        await exportPolicyImpactReportPDF({
+          policies: areaPolicies,
+          impactMap,
+          district: incidentDistrict || userDistrict || 'Chennai',
+          state: incidentState || userState || 'Tamil Nadu',
+          citizenInterests: interests,
+          filterApplied: 'All Area Policies',
+        });
+      } else {
+        // Compile Civic Engagement Analytics using actual real issues
+        const totalReports = issuesList.length;
+        const totalVoice = issuesList.filter((i) => i.originalLanguage && i.transcription).length;
+        const voicePercentage = totalReports > 0 ? Math.round((totalVoice / totalReports) * 100) : 0;
+        const totalInteractions = totalReports;
+
+        const categoryMap: Record<string, number> = {};
+        issuesList.forEach((issue) => {
+          const cat = issue.category || 'Roads & Infrastructure';
+          categoryMap[cat] = (categoryMap[cat] || 0) + 1;
+        });
+
+        const sectors = Object.entries(categoryMap).map(([name, count]) => ({
+          name,
+          count,
+          voice: `${voicePercentage}%`,
+          rating: 'Verified',
+          priority: count > 3 ? 'CRITICAL' : count > 1 ? 'HIGH' : 'MEDIUM',
+        }));
+
+        await exportEngagementReportPDF({
+          totalInteractions,
+          totalVoice,
+          totalReports,
+          totalFeedback: 0,
+          peakHour: '09:00 - 11:30 AM',
+          peakDay: 'Live Feed',
+          voicePercentage,
+          momentum: '+18.5%',
+          selectedSector: 'All Sectors',
+          viewMode: 'live',
+          metricFilter: 'all',
+          region: `${incidentDistrict || userDistrict || 'Chennai'}, ${incidentState || userState || 'Tamil Nadu'}`,
+          sectors: sectors.length > 0 ? sectors : undefined,
+        });
+      }
       setPdfExportSuccess(true);
       setTimeout(() => setPdfExportSuccess(false), 3500);
     } catch (err) {
@@ -974,25 +1018,46 @@ export const PeopleDashboard: React.FC<PeopleDashboardProps> = ({
               )}
             </button>
             <button
+              onClick={() => setActiveTab('updates')}
+              title="Gemini AI Predictive Government Policy Impact for Citizens"
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
+                activeTab === 'updates'
+                  ? 'bg-red-600 text-white shadow-[0_0_12px_rgba(239,68,68,0.5)]'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>Policy Impact</span>
+              {areaPolicies.length > 0 && (
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-red-950 text-red-300 border border-red-500/40">
+                  {areaPolicies.length}
+                </span>
+              )}
+            </button>
+            <button
               onClick={handleDashboardExportPDF}
               disabled={isExportingPdf}
-              title="Download Citizen Engagement Trends as PDF"
+              title={
+                activeTab === 'updates'
+                  ? 'Download compiled policy summaries and predictive impact scores as a formatted PDF for offline reading'
+                  : 'Download Citizen Engagement Trends as PDF'
+              }
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white shadow-[0_0_12px_rgba(239,68,68,0.35)] disabled:opacity-50 cursor-pointer ml-1"
             >
               {isExportingPdf ? (
                 <>
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Exporting...</span>
+                  <span>{activeTab === 'updates' ? 'Compiling Report...' : 'Exporting...'}</span>
                 </>
               ) : pdfExportSuccess ? (
                 <>
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
-                  <span>PDF Downloaded!</span>
+                  <span>Report Downloaded!</span>
                 </>
               ) : (
                 <>
                   <FileDown className="w-3.5 h-3.5 text-red-100" />
-                  <span>Export PDF</span>
+                  <span>{activeTab === 'updates' ? 'Download Policy Report' : 'Export PDF'}</span>
                 </>
               )}
             </button>
@@ -1490,15 +1555,15 @@ export const PeopleDashboard: React.FC<PeopleDashboardProps> = ({
                       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5">
                         <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1 shrink-0">
                           <Languages className="w-3 h-3 text-red-400" />
-                          <span>குரல் மொழி:</span>
+                          <span>Language:</span>
                         </span>
                         {[
+                          { code: 'en', label: 'English' },
                           { code: 'ta', label: 'தமிழ் (Tamil)' },
-                          { code: 'ml', label: 'മലയാളം (Malayalam)' },
+                          { code: 'hi', label: 'हिन्दी (Hindi)' },
                           { code: 'te', label: 'తెలుగు (Telugu)' },
                           { code: 'kn', label: 'ಕನ್ನಡ (Kannada)' },
-                          { code: 'hi', label: 'हिन्दी (Hindi)' },
-                          { code: 'en', label: 'English' },
+                          { code: 'ml', label: 'മലയാളം (Malayalam)' },
                         ].map((item) => (
                           <button
                             key={item.code}
@@ -1518,6 +1583,17 @@ export const PeopleDashboard: React.FC<PeopleDashboardProps> = ({
                             {item.label}
                           </button>
                         ))}
+
+                        <button
+                          type="button"
+                          onClick={() => setIsLanguageDiagnosticsOpen(true)}
+                          title="Open Language Output & Linguistic Accuracy Diagnostics"
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-xl text-[11px] font-bold bg-blue-950/40 text-blue-300 hover:bg-blue-900/50 border border-blue-500/30 transition-colors shrink-0 cursor-pointer ml-auto"
+                        >
+                          <Activity className="w-3 h-3 text-blue-400" />
+                          <span className="hidden sm:inline">Linguistic Diagnostics</span>
+                          <span className="sm:hidden">Diagnostics</span>
+                        </button>
                       </div>
 
                       {/* ACTIVE RECORDING PULSE BANNER */}
@@ -2470,11 +2546,22 @@ export const PeopleDashboard: React.FC<PeopleDashboardProps> = ({
           />
         )}
 
+        {/* TAB 6: GEMINI PREDICTIVE GOVERNMENT POLICY IMPACT MODULE */}
+        {activeTab === 'updates' && (
+          <PolicyPredictiveModuleTab
+            policies={areaPolicies}
+            userData={userData}
+            userDistrict={incidentDistrict || userDistrict}
+            userState={incidentState || userState}
+            preferredLangCode={speakLanguageCode || currentLanguage.code || 'en'}
+          />
+        )}
+
         {/* ZERO-LITERACY FRIENDLY VOICE AI BUDDY MODAL */}
         <FriendlyVoiceBuddyModal
           isOpen={isVoiceBuddyOpen}
           onClose={() => setIsVoiceBuddyOpen(false)}
-          langCode={speakLanguageCode || (currentLanguage.code === 'en' ? 'ta' : currentLanguage.code)}
+          langCode={speakLanguageCode || currentLanguage.code || 'en'}
           userDistrict={incidentDistrict || userDistrict}
           userState={incidentState || userState}
           userCountry={incidentCountry || userCountry}
@@ -2506,11 +2593,19 @@ export const PeopleDashboard: React.FC<PeopleDashboardProps> = ({
           isOpen={isPolicyDrawerOpen}
           onClose={() => setIsPolicyDrawerOpen(false)}
           policies={areaPolicies}
+          preferredLangCode={speakLanguageCode || currentLanguage.code || 'en'}
           userLocation={{
             country: incidentCountry || userCountry,
             state: incidentState || userState,
             district: incidentDistrict || userDistrict,
           }}
+        />
+
+        {/* LINGUISTIC ACCURACY & VOICE DIAGNOSTICS MODAL */}
+        <LanguageDiagnosticsModal
+          isOpen={isLanguageDiagnosticsOpen}
+          onClose={() => setIsLanguageDiagnosticsOpen(false)}
+          initialLangCode={speakLanguageCode || currentLanguage.code}
         />
       </div>
     </div>

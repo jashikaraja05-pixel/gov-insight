@@ -6,6 +6,8 @@ import { PeopleDashboard } from './components/people/PeopleDashboard';
 import { GovernmentDashboard } from './components/government/GovernmentDashboard';
 import { ResponsibleAIModal } from './components/common/ResponsibleAIModal';
 import { FeedbackModal } from './components/common/FeedbackModal';
+import { LanguageDiagnosticsModal } from './components/common/LanguageDiagnosticsModal';
+import { PolicySpeechPlayer } from './components/common/PolicySpeechPlayer';
 import { GovInsightLogo } from './components/common/GovInsightLogo';
 import { SUPPORTED_LANGUAGES, COUNTRY_PROFILES, t } from './services/i18n';
 import { SupportedLanguage, CountryProfile } from './types';
@@ -13,12 +15,29 @@ import { ShieldCheck, Users, Building2, LogOut } from 'lucide-react';
 
 export default function App() {
   const [currentView, setCurrentView] = useState<'landing' | 'auth' | 'people' | 'government'>('landing');
-  const [currentLanguage, setCurrentLanguage] = useState<SupportedLanguage>(SUPPORTED_LANGUAGES[0]); // English default
+  const [currentLanguage, setCurrentLanguage] = useState<SupportedLanguage>(() => {
+    try {
+      const saved = localStorage.getItem('govinsight_app_language');
+      if (saved) {
+        const found = SUPPORTED_LANGUAGES.find((l) => l.code === saved);
+        if (found) return found;
+      }
+    } catch {}
+    return SUPPORTED_LANGUAGES[0]; // English default
+  });
   const [currentCountry, setCurrentCountry] = useState<CountryProfile>(COUNTRY_PROFILES[0]); // India default
   const [isResponsibleAiOpen, setIsResponsibleAiOpen] = useState<boolean>(false);
   const [isFeedbackOpen, setIsFeedbackOpen] = useState<boolean>(false);
+  const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+
+  const handleLanguageChange = (lang: SupportedLanguage) => {
+    setCurrentLanguage(lang);
+    try {
+      localStorage.setItem('govinsight_app_language', lang.code);
+    } catch {}
+  };
 
   const handleLoginSuccess = (role: 'people' | 'government', userData?: any) => {
     setCurrentUser(userData || null);
@@ -47,11 +66,12 @@ export default function App() {
         currentView={currentView}
         onNavigate={handleNavigate}
         currentLanguage={currentLanguage}
-        onLanguageChange={(lang) => setCurrentLanguage(lang)}
+        onLanguageChange={handleLanguageChange}
         currentCountry={currentCountry}
         onCountryChange={(country) => setCurrentCountry(country)}
         onOpenResponsibleAi={() => setIsResponsibleAiOpen(true)}
         onOpenFeedback={() => setIsFeedbackOpen(true)}
+        onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
         isLoggedIn={isLoggedIn}
       />
 
@@ -123,6 +143,7 @@ export default function App() {
               currentCountry={currentCountry}
               onOpenResponsibleAi={() => setIsResponsibleAiOpen(true)}
               onSwitchToCitizen={() => setCurrentView('people')}
+              userData={currentUser}
             />
           ) : (
             <AuthScreen
@@ -144,6 +165,16 @@ export default function App() {
         isOpen={isFeedbackOpen}
         onClose={() => setIsFeedbackOpen(false)}
       />
+
+      {/* Language Output & Linguistic Accuracy Diagnostic Utility */}
+      <LanguageDiagnosticsModal
+        isOpen={isDiagnosticsOpen}
+        onClose={() => setIsDiagnosticsOpen(false)}
+        initialLangCode={currentLanguage.code}
+      />
+
+      {/* Persistent Policy SpeechSynthesis Player Bar */}
+      <PolicySpeechPlayer />
     </div>
   );
 }

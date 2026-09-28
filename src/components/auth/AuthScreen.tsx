@@ -81,6 +81,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   const [citizenError, setCitizenError] = useState('');
 
   // Government form state
+  const [govName, setGovName] = useState('');
+  const [govMobile, setGovMobile] = useState('');
   const [govDept, setGovDept] = useState('Public Works & Highways');
   const [govOfficialId, setGovOfficialId] = useState('');
   const [govPasscode, setGovPasscode] = useState('');
@@ -276,10 +278,18 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   };
 
   // Government Login submit handler
-  const handleGovLogin = (e: React.FormEvent) => {
+  const handleGovLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setGovError('');
 
+    if (!govName.trim()) {
+      setGovError('Please enter your Official Full Name.');
+      return;
+    }
+    if (!govMobile.trim()) {
+      setGovError('Please enter your Official Mobile Number.');
+      return;
+    }
     if (!govOfficialId.trim()) {
       setGovError('Please enter your Government Employee ID / Badge Number.');
       return;
@@ -289,8 +299,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       return;
     }
 
+    const officialUid = `gov_${govOfficialId.trim().toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+
     const govData = {
-      name: `Officer ${govOfficialId.trim()}`,
+      id: officialUid,
+      name: govName.trim(),
+      mobile: govMobile.trim(),
       role: 'Authorized Department Administrator',
       department: govDept,
       badgeId: govOfficialId.trim(),
@@ -300,6 +314,28 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       isAuthorized: true,
       sessionStarted: new Date().toISOString(),
     };
+
+    // Save official profile to Firestore
+    try {
+      await setDoc(
+        doc(db, 'users', officialUid),
+        {
+          uid: officialUid,
+          name: govData.name,
+          mobile: govData.mobile,
+          role: 'government',
+          department: govDept,
+          designation: govData.role,
+          badgeId: govData.badgeId,
+          district: selectedDistrict,
+          state: selectedState,
+          createdAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+    } catch (err) {
+      console.warn('Firestore official profile notice:', err);
+    }
 
     onLoginSuccess('government', govData);
   };
@@ -740,6 +776,40 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       </option>
                     ))}
                   </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">
+                  Official Full Name <span className="text-red-400">*</span>
+                </label>
+                <div className="relative">
+                  <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+                  <input
+                    type="text"
+                    required
+                    value={govName}
+                    onChange={(e) => setGovName(e.target.value)}
+                    placeholder="e.g. Er. S. Ramanathan / Dr. Rajesh Sundaram"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-red-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">
+                  Official Mobile Number <span className="text-red-400">*</span>
+                </label>
+                <div className="relative">
+                  <Phone className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+                  <input
+                    type="tel"
+                    required
+                    value={govMobile}
+                    onChange={(e) => setGovMobile(e.target.value)}
+                    placeholder="e.g. +91 98401 23456"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-red-500 font-mono"
+                  />
                 </div>
               </div>
 

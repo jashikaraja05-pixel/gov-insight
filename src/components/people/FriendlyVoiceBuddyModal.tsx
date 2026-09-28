@@ -21,6 +21,7 @@ import {
   processConversationalTurn,
   speakAIAssistantVoice,
   stopAIAssistantVoice,
+  fetchGeminiConversationalTurn,
 } from '../../services/voiceAssistantService';
 import { saveIssue } from '../../services/dataService';
 import { searchAddressOrLandmark } from '../../services/geocodingService';
@@ -49,17 +50,17 @@ export const FriendlyVoiceBuddyModal: React.FC<FriendlyVoiceBuddyModalProps> = (
   onLocationResolved,
   onIssueCreated,
 }) => {
-  // Normalize initial language (default to Tamil 'ta' if English or Indian language)
+  // Normalize initial language (default to English 'en')
   const defaultLang: SupportedCivicLang =
     initialLangCode in CIVIC_LANG_METADATA
       ? (initialLangCode as SupportedCivicLang)
-      : 'ta';
+      : 'en';
 
   const [currentLang, setCurrentLang] = useState<SupportedCivicLang>(defaultLang);
   const [dialogueState, setDialogueState] = useState<DialogueState>({
     ...INITIAL_DIALOGUE_STATE,
     activeLang: defaultLang,
-    lastAiReply: (CIVIC_LANG_METADATA[defaultLang] || CIVIC_LANG_METADATA.ta).greeting,
+    lastAiReply: (CIVIC_LANG_METADATA[defaultLang] || CIVIC_LANG_METADATA.en).greeting,
   });
 
   const [isListening, setIsListening] = useState(false);
@@ -74,9 +75,9 @@ export const FriendlyVoiceBuddyModal: React.FC<FriendlyVoiceBuddyModalProps> = (
   // Sync language when modal opens
   useEffect(() => {
     if (isOpen) {
-      const active = initialLangCode in CIVIC_LANG_METADATA ? (initialLangCode as SupportedCivicLang) : 'ta';
+      const active = initialLangCode in CIVIC_LANG_METADATA ? (initialLangCode as SupportedCivicLang) : 'en';
       setCurrentLang(active);
-      const meta = CIVIC_LANG_METADATA[active] || CIVIC_LANG_METADATA.ta;
+      const meta = CIVIC_LANG_METADATA[active] || CIVIC_LANG_METADATA.en;
 
       const freshState: DialogueState = {
         ...INITIAL_DIALOGUE_STATE,
@@ -239,16 +240,46 @@ export const FriendlyVoiceBuddyModal: React.FC<FriendlyVoiceBuddyModalProps> = (
       }
     }
 
-    // Speak AI Reply in detected / active native language
+    // Attempt Gemini AI dynamic, ultra-fluent Tamil conversational response
+    let finalAiReply = aiSpeechReply;
+    let finalNextState = nextState;
+
+    if (!shouldSubmitNow && spokenText.trim().length > 3) {
+      try {
+        const geminiTurn = await fetchGeminiConversationalTurn(
+          spokenText,
+          dialogueState,
+          userDistrict,
+          userState
+        );
+        if (geminiTurn && geminiTurn.aiVoiceReply) {
+          finalAiReply = geminiTurn.aiVoiceReply;
+          finalNextState = {
+            ...nextState,
+            category: geminiTurn.category || nextState.category,
+            subcategory: geminiTurn.subcategory || nextState.subcategory,
+            criticality: geminiTurn.criticality || nextState.criticality,
+            recommendedDepartment: geminiTurn.recommendedDepartment || nextState.recommendedDepartment,
+            extractedLandmark: geminiTurn.extractedLandmark || nextState.extractedLandmark,
+            lastAiReply: geminiTurn.aiVoiceReply,
+          };
+          setDialogueState(finalNextState);
+        }
+      } catch (err) {
+        console.warn('Gemini turn dynamic response notice:', err);
+      }
+    }
+
+    // Speak AI Reply in detected / active native language (Gemini TTS / Fluent Audio)
     speakAIAssistantVoice(
-      aiSpeechReply,
+      finalAiReply,
       detectedLang,
       () => setIsAiSpeaking(true),
       () => {
         setIsAiSpeaking(false);
         if (shouldSubmitNow) {
-          executeDirectSubmission(nextState, detectedLang);
-        } else if (nextState.step === 'confirm_submission') {
+          executeDirectSubmission(finalNextState, detectedLang);
+        } else if (finalNextState.step === 'confirm_submission') {
           // Give citizen a moment to say "சரி" or "அனுப்பு"
           setTimeout(() => {
             startListening(detectedLang);
@@ -376,10 +407,10 @@ export const FriendlyVoiceBuddyModal: React.FC<FriendlyVoiceBuddyModalProps> = (
         <div className="px-4 py-2 bg-black/70 border-b border-white/10 flex items-center gap-2 overflow-x-auto">
           <div className="flex items-center gap-1 text-[11px] font-bold text-slate-400 shrink-0">
             <Languages className="w-3.5 h-3.5 text-red-400" />
-            <span>மொழி / Language:</span>
+            <span>Language:</span>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            {(['ta', 'ml', 'te', 'kn', 'hi', 'en'] as SupportedCivicLang[]).map((code) => {
+            {(['en', 'ta', 'hi', 'te', 'kn', 'ml'] as SupportedCivicLang[]).map((code) => {
               const meta = CIVIC_LANG_METADATA[code];
               const isActive = currentLang === code;
               return (

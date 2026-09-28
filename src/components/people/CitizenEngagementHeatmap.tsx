@@ -107,17 +107,16 @@ export const CitizenEngagementHeatmap: React.FC<CitizenEngagementHeatmapProps> =
     };
   }, []);
 
-  // Generate 30 days of synthetic + live data
+  // Aggregate engagement analytics purely from real live issues and feedback
   const { cellsData, summaryStats } = useMemo(() => {
-    // Current simulated date reference: late September 2026
-    const today = new Date('2026-09-24T12:00:00');
+    const today = new Date();
     const days: { date: Date; dateStr: string; label: string; dayOfWeek: string }[] = [];
 
     for (let i = 29; i >= 0; i--) {
       const d = new Date(today);
       d.setDate(today.getDate() - i);
-      const dayStr = d.toISOString().split('T')[0];
-      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const dayStr = d.toISOString().split("T")[0];
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
       const label = `${monthNames[d.getMonth()]} ${d.getDate()}`;
       const dayOfWeekIndex = (d.getDay() + 6) % 7; // Monday = 0
       days.push({
@@ -128,7 +127,28 @@ export const CitizenEngagementHeatmap: React.FC<CitizenEngagementHeatmapProps> =
       });
     }
 
-    // Baseline counts by pseudo-random seed based on day and slot
+    // Process real events from liveIssues
+    const realEvents = (liveIssues || []).map((issue) => {
+      const d = issue.createdAt ? new Date(issue.createdAt) : new Date();
+      const dateStr = !isNaN(d.getTime()) ? d.toISOString().split("T")[0] : today.toISOString().split("T")[0];
+      const h = !isNaN(d.getHours()) ? d.getHours() : 9;
+      const dowIdx = (d.getDay() + 6) % 7;
+      const dayOfWeek = DAYS_OF_WEEK[dowIdx];
+      const isVoice = Boolean(issue.originalLanguage && issue.transcription);
+      const isFeedback = Boolean(issue.citizenFeedback);
+      const category = issue.category || "Roads & Infrastructure";
+
+      let slotId = "08-12";
+      if (h < 4) slotId = "00-04";
+      else if (h < 8) slotId = "04-08";
+      else if (h < 12) slotId = "08-12";
+      else if (h < 16) slotId = "12-16";
+      else if (h < 20) slotId = "16-20";
+      else slotId = "20-24";
+
+      return { dateStr, hour: h, dayOfWeek, slotId, isVoice, isFeedback, category };
+    });
+
     const cells: HeatmapCellData[] = [];
     let totalInteractions = 0;
     let totalVoice = 0;
@@ -137,52 +157,31 @@ export const CitizenEngagementHeatmap: React.FC<CitizenEngagementHeatmapProps> =
     const hourCounts: Record<number, number> = {};
     const dayCounts: Record<string, number> = {};
 
-    if (viewMode === '30days') {
+    if (viewMode === "30days") {
       // 30 Days (X) x 6 Time Slots (Y)
-      days.forEach((day, dayIdx) => {
-        TIME_SLOTS.forEach((slot, slotIdx) => {
-          // Synthetic deterministic baseline: weekday peak mornings & evenings, weekend afternoons
-          const isWeekend = day.dayOfWeek === 'Sat' || day.dayOfWeek === 'Sun';
-          const isPeakHour = slot.id === '08-12' || slot.id === '16-20';
-          let base = isPeakHour ? 8 : 3;
-          if (isWeekend && slot.id === '12-16') base += 5;
-          if (slot.id === '00-04') base = 1;
+      days.forEach((day) => {
+        TIME_SLOTS.forEach((slot) => {
+          const matching = realEvents.filter((e) => {
+            if (e.dateStr !== day.dateStr || e.slotId !== slot.id) return false;
+            if (selectedSector !== "All Sectors" && !e.category.toLowerCase().includes(selectedSector.toLowerCase())) return false;
+            return true;
+          });
 
-          // Deterministic noise
-          const noise = ((dayIdx * 7 + slotIdx * 13) % 9) - 3;
-          let count = Math.max(1, base + noise);
+          const reportCount = matching.length;
+          const voiceCount = matching.filter((e) => e.isVoice).length;
+          const feedbackCount = matching.filter((e) => e.isFeedback).length;
 
-          // Attribute category
-          const categories = [
-            'Roads & Infrastructure',
-            'Water & Drainage',
-            'Sanitation & Waste',
-            'Electricity & Power',
-            'Public Health',
-          ];
-          const topCategory = categories[(dayIdx + slotIdx) % categories.length];
-
-          // Filter by sector if applied
-          if (selectedSector !== 'All Sectors' && topCategory !== selectedSector) {
-            count = Math.floor(count * 0.2);
-          }
-
-          const voiceCount = Math.round(count * 0.42);
-          const feedbackCount = Math.round(count * 0.28);
-          const reportCount = count - feedbackCount;
-
-          // Count according to metric filter
-          let effectiveCount = count;
-          if (metricFilter === 'reports') effectiveCount = reportCount;
-          if (metricFilter === 'voice') effectiveCount = voiceCount;
-          if (metricFilter === 'feedback') effectiveCount = feedbackCount;
+          let effectiveCount = reportCount;
+          if (metricFilter === "reports") effectiveCount = reportCount;
+          if (metricFilter === "voice") effectiveCount = voiceCount;
+          if (metricFilter === "feedback") effectiveCount = feedbackCount;
 
           totalInteractions += effectiveCount;
           totalVoice += voiceCount;
           totalReports += reportCount;
           totalFeedback += feedbackCount;
 
-          const hourMid = slotIdx * 4 + 2;
+          const hourMid = (parseInt(slot.id.split("-")[0], 10) || 8) + 2;
           hourCounts[hourMid] = (hourCounts[hourMid] || 0) + effectiveCount;
           dayCounts[day.dayOfWeek] = (dayCounts[day.dayOfWeek] || 0) + effectiveCount;
 
@@ -195,118 +194,112 @@ export const CitizenEngagementHeatmap: React.FC<CitizenEngagementHeatmapProps> =
             voiceCount,
             feedbackCount,
             reportCount,
-            topCategory,
+            topCategory: matching[0]?.category || "General",
             dateStr: day.dateStr,
             dayOfWeek: day.dayOfWeek,
           });
         });
       });
-    } else if (viewMode === 'weekly_hours') {
+    } else if (viewMode === "weekly_hours") {
       // 24 Hours (X) x 7 Days of Week (Y)
       const hours = Array.from({ length: 24 }, (_, i) => i);
       DAYS_OF_WEEK.forEach((dow) => {
         hours.forEach((h) => {
-          const isWeekend = dow === 'Sat' || dow === 'Sun';
-          const isCommute = (h >= 8 && h <= 10) || (h >= 17 && h <= 19);
-          const isLunch = h >= 12 && h <= 14;
-          const isNight = h >= 1 && h <= 5;
+          const matching = realEvents.filter((e) => {
+            if (e.dayOfWeek !== dow || e.hour !== h) return false;
+            if (selectedSector !== "All Sectors" && !e.category.toLowerCase().includes(selectedSector.toLowerCase())) return false;
+            return true;
+          });
 
-          let count = isNight ? 1 : isCommute ? 14 : isLunch ? 9 : 5;
-          if (isWeekend && h >= 10 && h <= 16) count += 6;
+          const reportCount = matching.length;
+          const voiceCount = matching.filter((e) => e.isVoice).length;
+          const feedbackCount = matching.filter((e) => e.isFeedback).length;
 
-          const categories = [
-            'Roads & Infrastructure',
-            'Water & Drainage',
-            'Sanitation & Waste',
-            'Electricity & Power',
-          ];
-          const topCategory = categories[(h + dow.charCodeAt(0)) % categories.length];
-
-          if (selectedSector !== 'All Sectors' && topCategory !== selectedSector) {
-            count = Math.floor(count * 0.25);
-          }
-
-          const voiceCount = Math.round(count * 0.45);
-          const feedbackCount = Math.round(count * 0.25);
-          const reportCount = count - feedbackCount;
-
-          let effectiveCount = count;
-          if (metricFilter === 'reports') effectiveCount = reportCount;
-          if (metricFilter === 'voice') effectiveCount = voiceCount;
-          if (metricFilter === 'feedback') effectiveCount = feedbackCount;
+          let effectiveCount = reportCount;
+          if (metricFilter === "reports") effectiveCount = reportCount;
+          if (metricFilter === "voice") effectiveCount = voiceCount;
+          if (metricFilter === "feedback") effectiveCount = feedbackCount;
 
           totalInteractions += effectiveCount;
           totalVoice += voiceCount;
           totalReports += reportCount;
           totalFeedback += feedbackCount;
 
-          const hourLabel = `${h.toString().padStart(2, '0')}:00`;
-
           cells.push({
             xKey: h.toString(),
-            xLabel: hourLabel,
+            xLabel: `${h.toString().padStart(2, "0")}:00`,
             yKey: dow,
             yLabel: dow,
             count: effectiveCount,
             voiceCount,
             feedbackCount,
             reportCount,
-            topCategory,
+            topCategory: matching[0]?.category || "General",
             hour: h,
             dayOfWeek: dow,
           });
         });
       });
     } else {
-      // Sectors (Y) x 4 Weeks of the Month (X)
-      const weeks = ['Week 1 (Aug 25-31)', 'Week 2 (Sep 01-07)', 'Week 3 (Sep 08-14)', 'Week 4 (Sep 15-24)'];
-      const sectorNames = SECTORS.filter((s) => s !== 'All Sectors');
+      // Sectors (Y) x 4 Weeks (X)
+      const weeks = ["Week 1", "Week 2", "Week 3", "Week 4"];
+      const sectorNames = SECTORS.filter((s) => s !== "All Sectors");
 
-      sectorNames.forEach((sec, secIdx) => {
+      sectorNames.forEach((sec) => {
         weeks.forEach((wk, wkIdx) => {
-          let count = 28 + ((secIdx * 11 + wkIdx * 17) % 25);
-          if (sec.includes('Roads') || sec.includes('Water')) count += 15;
+          const matching = realEvents.filter((e) => {
+            if (!e.category.toLowerCase().includes(sec.toLowerCase())) return false;
+            if (selectedSector !== "All Sectors" && !sec.toLowerCase().includes(selectedSector.toLowerCase())) return false;
+            return true;
+          });
 
-          if (selectedSector !== 'All Sectors' && sec !== selectedSector) {
-            count = Math.floor(count * 0.15);
-          }
+          // Evenly distribute into weeks for visual mapping
+          const countInWeek = matching.filter((_, idx) => idx % 4 === wkIdx).length;
+          const voiceCount = Math.round(countInWeek * (matching.length > 0 ? matching.filter(e => e.isVoice).length / matching.length : 0));
+          const feedbackCount = Math.round(countInWeek * (matching.length > 0 ? matching.filter(e => e.isFeedback).length / matching.length : 0));
 
-          const voiceCount = Math.round(count * 0.4);
-          const feedbackCount = Math.round(count * 0.3);
-          const reportCount = count - feedbackCount;
-
-          let effectiveCount = count;
-          if (metricFilter === 'reports') effectiveCount = reportCount;
-          if (metricFilter === 'voice') effectiveCount = voiceCount;
-          if (metricFilter === 'feedback') effectiveCount = feedbackCount;
+          let effectiveCount = countInWeek;
+          if (metricFilter === "reports") effectiveCount = countInWeek;
+          if (metricFilter === "voice") effectiveCount = voiceCount;
+          if (metricFilter === "feedback") effectiveCount = feedbackCount;
 
           totalInteractions += effectiveCount;
           totalVoice += voiceCount;
-          totalReports += reportCount;
+          totalReports += countInWeek;
           totalFeedback += feedbackCount;
 
           cells.push({
             xKey: wk,
-            xLabel: wk.split(' ')[0] + ' ' + wk.split(' ')[1],
+            xLabel: wk,
             yKey: sec,
             yLabel: sec,
             count: effectiveCount,
             voiceCount,
             feedbackCount,
-            reportCount,
+            reportCount: countInWeek,
             topCategory: sec,
           });
         });
       });
     }
 
-    // Determine peak day and peak hour
-    let peakDay = 'Wednesday';
-    let maxDayCount = -1;
+    // Determine peak day and peak hour from real events
+    let peakDay = "Active Feed";
+    let maxDayCount = 0;
     Object.entries(dayCounts).forEach(([d, c]) => {
       if (c > maxDayCount) {
         maxDayCount = c;
-        peakDay = d === 'Mon' ? 'Monday' : d === 'Tue' ? 'Tuesday' : d === 'Wed' ? 'Wednesday' : d === 'Thu' ? 'Thursday' : d === 'Fri' ? 'Friday' : d === 'Sat' ? 'Saturday' : 'Sunday';
+        peakDay = d === "Mon" ? "Monday" : d === "Tue" ? "Tuesday" : d === "Wed" ? "Wednesday" : d === "Thu" ? "Thursday" : d === "Fri" ? "Friday" : d === "Sat" ? "Saturday" : "Sunday";
+      }
+    });
+
+    let peakHour = "09:00 - 11:30 AM";
+    let maxHourCount = 0;
+    Object.entries(hourCounts).forEach(([h, c]) => {
+      if (c > maxHourCount) {
+        maxHourCount = c;
+        const hr = parseInt(h, 10);
+        peakHour = `${hr.toString().padStart(2, "0")}:00 - ${(hr + 2).toString().padStart(2, "0")}:00`;
       }
     });
 
@@ -315,10 +308,10 @@ export const CitizenEngagementHeatmap: React.FC<CitizenEngagementHeatmapProps> =
       totalVoice,
       totalReports,
       totalFeedback,
-      peakHour: '09:00 - 11:30 AM',
-      peakDay,
-      voicePercentage: totalInteractions > 0 ? Math.round((totalVoice / totalInteractions) * 100) : 41,
-      momentum: '+26.4%',
+      peakHour: totalInteractions > 0 ? peakHour : "Live Feed",
+      peakDay: totalInteractions > 0 ? peakDay : "Live Feed",
+      voicePercentage: totalInteractions > 0 ? Math.round((totalVoice / totalInteractions) * 100) : 0,
+      momentum: totalInteractions > 0 ? `+${totalInteractions} Live Actions` : "Awaiting Submissions",
     };
 
     return { past30DaysList: days, cellsData: cells, summaryStats: stats };

@@ -314,65 +314,145 @@ export function translateReport(
   };
 }
 
-// Native Speech Synthesis playback with precise locale voice selection
+// Native Speech Synthesis playback with precise locale voice selection and Gemini TTS fallback
 let activeUtterance: SpeechSynthesisUtterance | null = null;
+let activeMultilingualAudio: HTMLAudioElement | null = null;
 
 export function stopSpeaking(): void {
+  if (activeMultilingualAudio) {
+    try {
+      activeMultilingualAudio.pause();
+      activeMultilingualAudio.currentTime = 0;
+    } catch {
+      // ignore
+    }
+    activeMultilingualAudio = null;
+  }
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     window.speechSynthesis.cancel();
     activeUtterance = null;
   }
 }
 
-export function speakCivicText(params: {
+export async function speakCivicText(params: {
   text: string;
   langCode: string;
   onStart?: () => void;
   onEnd?: () => void;
   onError?: (err: any) => void;
-}): void {
-  if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-    console.warn('SpeechSynthesis is not supported in this environment.');
+}): Promise<void> {
+  stopSpeaking();
+
+  if (typeof window === 'undefined') {
+    params.onEnd?.();
     return;
   }
 
-  // Cancel any ongoing speech
-  stopSpeaking();
-
-  const langConfig = SPEECH_LOCALES[params.langCode] || SPEECH_LOCALES.en;
-  const targetLocale = langConfig.locale;
-
-  const utterance = new SpeechSynthesisUtterance(params.text);
-  utterance.lang = targetLocale;
-  utterance.rate = 0.95;
-  utterance.pitch = 1.0;
-
-  // Try to pick the best matching voice installed on user device
-  const voices = window.speechSynthesis.getVoices();
-  const matchedVoice = voices.find((v) => v.lang === targetLocale || v.lang.startsWith(params.langCode));
-  if (matchedVoice) {
-    utterance.voice = matchedVoice;
+  const clean = params.text.trim();
+  if (!clean) {
+    params.onEnd?.();
+    return;
   }
 
-  utterance.onstart = () => {
-    params.onStart?.();
-  };
+  // 1. For Tamil and Indian regional languages, prefer Gemini TTS & Server Stream for 100% fluent pronunciation
+  if (['ta', 'ml', 'te', 'kn', 'hi'].includes(params.langCode)) {
+    try {
+      const res = await fetch('/api/voice/gemini-tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: clean,
+          lang: params.langCode,
+          voice: 'Kore',
+        }),
+      });
 
-  utterance.onend = () => {
-    activeUtterance = null;
+      if (res.ok) {
+        const data = await res.json();
+        if (data.audioUrl) {
+          const audio = new Audio(data.audioUrl);
+          activeMultilingualAudio = audio;
+          audio.onplay = () => params.onStart?.();
+          audio.onended = () => {
+            activeMultilingualAudio = null;
+            params.onEnd?.();
+          };
+          audio.onerror = () => {
+            activeMultilingualAudio = null;
+            params.onEnd?.();
+          };
+          audio.play().catch(() => params.onEnd?.());
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('Multilingual TTS fetch fallback:', err);
+    }
+  }
+
+  // 2. Browser SpeechSynthesis: ONLY IF verified native voice is installed
+  if ('speechSynthesis' in window) {
+    const langConfig = SPEECH_LOCALES[params.langCode] || SPEECH_LOCALES.en;
+    const targetLocale = langConfig.locale;
+    const voices = window.speechSynthesis.getVoices();
+
+    const matchedVoice = voices.find((v) => {
+      const langLower = v.lang.toLowerCase();
+      if (params.langCode === 'ta') {
+        return (
+          (langLower.startsWith('ta') ||
+            v.name.toLowerCase().includes('tamil') ||
+            v.name.includes('தமிழ்')) &&
+          !v.name.toLowerCase().includes('english')
+        );
+      }
+      return langLower === targetLocale.toLowerCase() || langLower.startsWith(params.langCode.toLowerCase());
+    });
+
+    if (matchedVoice) {
+      const utterance = new SpeechSynthesisUtterance(clean);
+      utterance.lang = matchedVoice.lang || targetLocale;
+      utterance.voice = matchedVoice;
+      utterance.rate = 0.95;
+      utterance.pitch = 1.0;
+
+      utterance.onstart = () => params.onStart?.();
+      utterance.onend = () => {
+        activeUtterance = null;
+        params.onEnd?.();
+      };
+      utterance.onerror = (e) => {
+        activeUtterance = null;
+        params.onError?.(e);
+      };
+
+      activeUtterance = utterance;
+      window.speechSynthesis.speak(utterance);
+      return;
+    }
+  }
+
+  // 3. Fallback to proxy streaming audio
+  const proxyUrl = `/api/voice/proxy-tts?text=${encodeURIComponent(clean.slice(0, 200))}&lang=${params.langCode || 'ta'}`;
+  const audio = new Audio(proxyUrl);
+  activeMultilingualAudio = audio;
+  audio.onplay = () => params.onStart?.();
+  audio.onended = () => {
+    activeMultilingualAudio = null;
     params.onEnd?.();
   };
-
-  utterance.onerror = (e) => {
-    activeUtterance = null;
-    params.onError?.(e);
+  audio.onerror = () => {
+    activeMultilingualAudio = null;
+    params.onEnd?.();
   };
-
-  activeUtterance = utterance;
-  window.speechSynthesis.speak(utterance);
+  audio.play().catch(() => params.onEnd?.());
 }
 
 export function isSpeaking(): boolean {
-  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return false;
-  return window.speechSynthesis.speaking || activeUtterance !== null;
+  if (typeof window === 'undefined') return false;
+  return (
+    ('speechSynthesis' in window && window.speechSynthesis.speaking) ||
+    activeUtterance !== null ||
+    activeMultilingualAudio !== null
+  );
 }

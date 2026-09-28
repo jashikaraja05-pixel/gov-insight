@@ -369,6 +369,565 @@ Provide a deep, nuanced civic intelligence sentiment analysis including overall 
   }
 });
 
+interface CitizenInterestsInput {
+  topics?: string[];
+  customInterests?: string;
+  occupation?: string;
+  householdType?: string;
+  district?: string;
+  state?: string;
+  ward?: string;
+}
+
+interface PolicyInput {
+  id: string;
+  title: string;
+  summary: string;
+  fullContent?: string;
+  category: string;
+  department: string;
+  gazetteRef?: string;
+  scope?: string;
+  affectedCountry?: string;
+  affectedState?: string;
+  affectedDistrict?: string;
+  affectedAreas?: string[];
+  priority?: string;
+  actionRequiredForCitizen?: string;
+  effectiveDate?: string;
+}
+
+// Predictive heuristic engine for calculating potential policy impact on citizen
+function computeHeuristicPolicyImpact(policy: PolicyInput, citizen: CitizenInterestsInput) {
+  const topics = Array.isArray(citizen.topics) ? citizen.topics : [];
+  const custom = (citizen.customInterests || '').toLowerCase();
+  const citizenDistrict = (citizen.district || '').toLowerCase();
+  const citizenWard = (citizen.ward || '').toLowerCase();
+
+  const titleLower = (policy.title || '').toLowerCase();
+  const summaryLower = (policy.summary || '').toLowerCase();
+  const fullContentLower = (policy.fullContent || '').toLowerCase();
+  const categoryLower = (policy.category || '').toLowerCase();
+  const deptLower = (policy.department || '').toLowerCase();
+  const combinedPolicyText = `${titleLower} ${summaryLower} ${fullContentLower} ${categoryLower} ${deptLower}`;
+
+  let matchScore = 0;
+  const matchedInterests: string[] = [];
+
+  const keywordMap: Record<string, string[]> = {
+    water_drainage: ['water', 'drainage', 'monsoon', 'desilting', 'pipe', 'leak', 'chlorine', 'cmwssb', 'sump', 'suction', 'drinking water', 'sewerage'],
+    'Water & Drainage': ['water', 'drainage', 'monsoon', 'desilting', 'pipe', 'leak', 'chlorine', 'cmwssb', 'sump', 'suction', 'drinking water', 'sewerage'],
+    'Drinking Water & Drainage': ['water', 'drainage', 'monsoon', 'desilting', 'pipe', 'leak', 'chlorine', 'cmwssb', 'sump', 'drinking water'],
+    roads_transit: ['road', 'pothole', 'highway', 'asphalt', 'traffic', 'bridge', 'pavement', 'street', 'crater', 'transit', 'bus', 'commute'],
+    'Roads & Infrastructure': ['road', 'pothole', 'highway', 'asphalt', 'traffic', 'bridge', 'pavement', 'street', 'crater', 'transit', 'bus'],
+    'Roads & Daily Commute': ['road', 'pothole', 'highway', 'asphalt', 'traffic', 'bridge', 'pavement', 'street', 'transit', 'commute', 'bus'],
+    solar_energy: ['power', 'electricity', 'solar', 'tangedco', 'meter', 'grid', 'subsidy', 'kilowatt', 'net-metering', 'rooftop'],
+    'Electricity & Power': ['power', 'electricity', 'solar', 'tangedco', 'meter', 'grid', 'streetlight', 'voltage', 'blackout', 'battery', 'ev'],
+    'Rooftop Solar & Power Subsidies': ['power', 'electricity', 'solar', 'tangedco', 'meter', 'grid', 'subsidy', 'kilowatt', 'net-metering'],
+    flood_monsoon: ['flood', 'monsoon', 'storm', 'cyclone', 'heavy rain', 'emergency', 'drainage', 'subway', 'waterlogging', 'suction', 'pump'],
+    'Disaster Preparedness': ['flood', 'monsoon', 'storm', 'cyclone', 'heavy rain', 'emergency', 'drainage', 'subway', 'waterlogging'],
+    'Monsoon Floods & Storm Drains': ['flood', 'monsoon', 'storm', 'rain', 'waterlogging', 'suction', 'pump', 'drainage', 'subway'],
+    healthcare_phc: ['health', 'hospital', 'doctor', 'clinic', 'medicine', 'phc', 'ambulance', 'medical', 'emergency'],
+    Healthcare: ['health', 'hospital', 'doctor', 'clinic', 'medicine', 'phc', 'ambulance', 'medical', 'emergency'],
+    'Public Healthcare & Hospitals': ['health', 'hospital', 'doctor', 'clinic', 'medicine', 'phc', 'ambulance'],
+    schools_education: ['school', 'education', 'student', 'teacher', 'classroom', 'primary school', 'headmaster'],
+    'Schools & Education': ['school', 'education', 'student', 'teacher', 'classroom', 'primary school', 'headmaster'],
+    sanitation_waste: ['sanitation', 'garbage', 'waste', 'dump', 'clean', 'trash', 'solid waste', 'sweeper', 'drain'],
+    Sanitation: ['sanitation', 'garbage', 'waste', 'dump', 'clean', 'trash', 'solid waste', 'sweeper', 'drain'],
+    'Sanitation & Garbage Clearance': ['sanitation', 'garbage', 'waste', 'dump', 'clean', 'trash', 'solid waste'],
+    ev_green_transit: ['ev', 'electric', 'charger', 'charging', 'vehicle', 'mobility', 'bus', 'station'],
+    'Electric Vehicles & Clean Mobility': ['ev', 'electric', 'charger', 'charging', 'vehicle', 'mobility', 'bus', 'station'],
+    pds_ration: ['food', 'ration', 'pds', 'rice', 'grain', 'civil supplies', 'subsidy'],
+    'Food Safety': ['food', 'ration', 'pds', 'rice', 'grain', 'civil supplies', 'subsidy'],
+    'PDS Ration & Food Security': ['food', 'ration', 'pds', 'rice', 'grain', 'civil supplies'],
+    senior_safety: ['safety', 'pedestrian', 'senior', 'elderly', 'footpath', 'lighting', 'walkway'],
+    'Public Safety': ['safety', 'police', 'traffic', 'barricade', 'hazard', 'emergency', 'tree', 'speed breaker'],
+    'Pedestrian Safety & Senior Care': ['safety', 'pedestrian', 'senior', 'elderly', 'footpath', 'lighting', 'walkway'],
+  };
+
+  for (const topic of topics) {
+    const keywords = keywordMap[topic] || topic.toLowerCase().split(/\W+/).filter(Boolean);
+    const hasMatch = keywords.some((kw) => combinedPolicyText.includes(kw.toLowerCase()));
+    if (hasMatch) {
+      matchScore += 35;
+      matchedInterests.push(topic);
+    }
+  }
+
+  if (custom.trim()) {
+    const customWords = custom.split(/\W+/).filter((w) => w.length > 3);
+    let customMatches = 0;
+    for (const word of customWords) {
+      if (combinedPolicyText.includes(word)) {
+        customMatches++;
+      }
+    }
+    if (customMatches > 0) {
+      matchScore += Math.min(30, customMatches * 15);
+      if (!matchedInterests.includes('Custom Profile Priority')) {
+        matchedInterests.push('Custom Profile Priority');
+      }
+    }
+  }
+
+  const polDistrict = (policy.affectedDistrict || '').toLowerCase();
+  const polAreas = (policy.affectedAreas || []).map((a) => a.toLowerCase());
+
+  if (citizenDistrict && (polDistrict.includes(citizenDistrict) || citizenDistrict.includes(polDistrict) || polDistrict.includes('all'))) {
+    matchScore += 20;
+  }
+  if (citizenWard && polAreas.some((a) => a.includes(citizenWard) || citizenWard.includes(a))) {
+    matchScore += 20;
+    matchedInterests.push(`Ward Match (${citizen.ward})`);
+  }
+
+  if (policy.priority === 'URGENT') matchScore += 15;
+  else if (policy.priority === 'HIGH') matchScore += 10;
+
+  const finalNumericScore = Math.min(98, Math.max(18, matchScore));
+  let scoreCategory: 'Low' | 'Medium' | 'High' = 'Low';
+  if (finalNumericScore >= 70) scoreCategory = 'High';
+  else if (finalNumericScore >= 40) scoreCategory = 'Medium';
+
+  const matchesStr = matchedInterests.length > 0 ? matchedInterests.join(', ') : 'civic infrastructure & public services';
+
+  let summary = '';
+  if (scoreCategory === 'High') {
+    summary = `Direct high impact on your daily civic life based on your stated interest in ${matchesStr}. As a resident${citizen.district ? ` in ${citizen.district}` : ''}, this directive brings immediate regulatory mandates and tangible public service benefits.`;
+  } else if (scoreCategory === 'Medium') {
+    summary = `Moderate impact on your household. While it aligns with ${matchesStr}, the directives primarily apply to broader municipal administration with secondary benefits for your neighborhood.`;
+  } else {
+    summary = `Low direct impact on your immediate priorities (${topics.slice(0, 2).join(', ') || 'general services'}). This policy is primarily informational for your sector but maintains baseline civic standards.`;
+  }
+
+  const keyBenefits = [
+    `Direct alignment with your civic priorities: ${matchesStr}`,
+    `Enhanced accountability and official SLA tracking from ${policy.department || 'the municipal authority'}`,
+    policy.actionRequiredForCitizen ? 'Clear actionable citizen channel provided' : 'Guaranteed grievance escalation on GovInsight',
+  ];
+
+  const actionSteps = [
+    policy.actionRequiredForCitizen || 'Review full gazette directive and note emergency helpline numbers.',
+    `Track neighborhood implementation in ${citizen.district || policy.affectedDistrict || 'your district'}.`,
+    'Submit photos or voice reports on GovInsight if municipal response is delayed.',
+  ];
+
+  return {
+    policyId: policy.id,
+    policyTitle: policy.title,
+    potentialImpactScore: scoreCategory,
+    numericScore: finalNumericScore,
+    impactSummary: summary,
+    keyBenefits,
+    actionSteps,
+    urgencyLevel: policy.priority === 'URGENT' ? 'Immediate' : policy.priority === 'HIGH' ? 'Upcoming' : 'Informational',
+    relevantInterestMatches: matchedInterests,
+    riskOrWatchpoints: [
+      'Ensure compliance with municipal deadlines and public advisories',
+      'Report non-compliance or contractor delays through GovInsight',
+    ],
+    analyzedAt: new Date().toISOString(),
+    source: 'predictive-heuristic-engine' as const,
+  };
+}
+
+// API endpoint for Gemini-powered predictive government policy impact analysis
+app.post('/api/policy/predict-impact', async (req: Request, res: Response) => {
+  const { policy, citizenInterests } = req.body as {
+    policy: PolicyInput;
+    citizenInterests: CitizenInterestsInput;
+  };
+
+  if (!policy || !policy.title) {
+    return res.status(400).json({ error: 'Missing required policy information' });
+  }
+
+  const citizen = citizenInterests || { topics: ['Water & Drainage', 'Roads & Infrastructure'] };
+
+  // If Gemini API key is not configured, use predictive heuristic
+  if (!apiKey) {
+    const heuristic = computeHeuristicPolicyImpact(policy, citizen);
+    return res.json(heuristic);
+  }
+
+  try {
+    const prompt = `Analyze this newly published government policy/gazette directive and output a potential impact score for a citizen based on their stated civic interests.
+
+GOVERNMENT POLICY:
+- Title: ${policy.title}
+- Department: ${policy.department}
+- Category: ${policy.category}
+- Priority: ${policy.priority || 'REGULAR'}
+- Gazette Reference: ${policy.gazetteRef || 'N/A'}
+- Jurisdiction: ${policy.affectedDistrict || 'All Districts'}, ${policy.affectedState || 'State'} (Scope: ${policy.scope || 'district'})
+- Affected Wards/Areas: ${(policy.affectedAreas || []).join(', ') || 'District-wide'}
+- Summary: ${policy.summary}
+- Official Directives: ${policy.fullContent || policy.summary}
+- Citizen Action Directive: ${policy.actionRequiredForCitizen || 'None specified'}
+
+CITIZEN PROFILE & STATED CIVIC INTERESTS:
+- Stated Priority Topics: ${(citizen.topics || []).join(', ') || 'General civic services'}
+- Citizen Custom Description/Notes: "${citizen.customInterests || 'Resident and commuter'}"
+- Citizen Location: District: ${citizen.district || 'Chennai'}, State: ${citizen.state || 'Tamil Nadu'}, Ward: ${citizen.ward || 'Central'}
+- Occupation/Household: ${citizen.occupation || 'Resident'} (${citizen.householdType || 'Domestic'})
+
+TASK:
+Predict the direct potential impact score (Low, Medium, High) of this policy on this specific citizen.
+- 'High': Directly alters citizen's daily routine, costs/subsidies, flood/water safety, commute, health, or aligns directly with their stated interests.
+- 'Medium': Moderately beneficial or tangential to their stated interests or neighborhood.
+- 'Low': Minimal direct impact on their stated interests or locality.
+
+Provide a tailored impact summary addressing the citizen, numeric score (0-100), key benefits, actionable citizen steps, urgency, matched interests, and risk/watchpoints.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: prompt,
+      config: {
+        systemInstruction:
+          'You are the Chief Citizen Policy Impact & Predictive Analytics Intelligence Engine for GovInsight. You evaluate municipal and government policies against citizens stated civic interests and output precise, actionable predictive impact assessments.',
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            potentialImpactScore: {
+              type: Type.STRING,
+              enum: ['Low', 'Medium', 'High'],
+            },
+            numericScore: {
+              type: Type.NUMBER,
+              description: 'Score from 0 to 100 representing strength and proximity of impact on the citizen',
+            },
+            impactSummary: {
+              type: Type.STRING,
+              description: '2-3 sentences explaining exactly how and why this policy impacts the citizen based on their stated interests and locality',
+            },
+            keyBenefits: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: 'Key positive benefits for this citizen',
+            },
+            actionSteps: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: 'Actionable steps the citizen should take to leverage or prepare for this policy',
+            },
+            urgencyLevel: {
+              type: Type.STRING,
+              enum: ['Immediate', 'Upcoming', 'Informational'],
+            },
+            relevantInterestMatches: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: 'List of citizen stated interests that directly match this policy',
+            },
+            riskOrWatchpoints: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: 'Things the citizen should watch out for or comply with',
+            },
+          },
+          required: [
+            'potentialImpactScore',
+            'numericScore',
+            'impactSummary',
+            'keyBenefits',
+            'actionSteps',
+            'urgencyLevel',
+            'relevantInterestMatches',
+            'riskOrWatchpoints',
+          ],
+        },
+      },
+    });
+
+    const responseText = response.text;
+    if (!responseText) {
+      throw new Error('Empty response from Gemini policy prediction model');
+    }
+
+    const parsed = JSON.parse(responseText);
+    return res.json({
+      policyId: policy.id,
+      policyTitle: policy.title,
+      ...parsed,
+      analyzedAt: new Date().toISOString(),
+      source: 'gemini-3.8-flash',
+    });
+  } catch (err: any) {
+    console.warn('Gemini policy impact prediction notice (using predictive heuristic fallback):', err?.message || err);
+    const fallback = computeHeuristicPolicyImpact(policy, citizen);
+    return res.json({
+      ...fallback,
+      note: 'Predicted via GovInsight Local Civic Engine (Gemini fallback)',
+    });
+  }
+});
+
+// API endpoint for batch policy impact prediction
+app.post('/api/policy/predict-impact-batch', async (req: Request, res: Response) => {
+  const { policies, citizenInterests } = req.body as {
+    policies: PolicyInput[];
+    citizenInterests: CitizenInterestsInput;
+  };
+
+  if (!Array.isArray(policies) || policies.length === 0) {
+    return res.json({ results: [] });
+  }
+
+  const citizen = citizenInterests || { topics: ['Water & Drainage', 'Roads & Infrastructure'] };
+
+  // Run predictions for all policies
+  const results = policies.map((p) => computeHeuristicPolicyImpact(p, citizen));
+  return res.json({
+    results,
+    count: results.length,
+    analyzedAt: new Date().toISOString(),
+  });
+});
+
+// Helper to wrap 16-bit 24kHz mono PCM in a canonical 44-byte WAV header
+function pcmToWav(pcmBase64: string, sampleRate = 24000, numChannels = 1, bitsPerSample = 16): string {
+  const pcmBuffer = Buffer.from(pcmBase64, 'base64');
+  const byteRate = (sampleRate * numChannels * bitsPerSample) / 8;
+  const blockAlign = (numChannels * bitsPerSample) / 8;
+  const dataSize = pcmBuffer.length;
+  const header = Buffer.alloc(44);
+
+  // RIFF identifier
+  header.write('RIFF', 0);
+  header.writeUInt32LE(36 + dataSize, 4);
+  header.write('WAVE', 8);
+  // fmt subchunk
+  header.write('fmt ', 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20); // AudioFormat = PCM
+  header.writeUInt16LE(numChannels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  // data subchunk
+  header.write('data', 36);
+  header.writeUInt32LE(dataSize, 40);
+
+  const wavBuffer = Buffer.concat([header, pcmBuffer]);
+  return wavBuffer.toString('base64');
+}
+
+// 1. Gemini AI High-Fidelity TTS Endpoint
+app.post('/api/voice/gemini-tts', async (req: Request, res: Response) => {
+  const { text, lang = 'ta', voice = 'Kore' } = req.body as {
+    text: string;
+    lang?: string;
+    voice?: string;
+  };
+
+  const cleanText = (text || '').trim();
+  if (!cleanText) {
+    return res.status(400).json({ error: 'Text is required for TTS' });
+  }
+
+  // If Gemini API is available, generate fluent speech via Gemini TTS
+  if (apiKey) {
+    try {
+      const isTamil = lang === 'ta';
+      const promptStyle = isTamil
+        ? 'Clear, fluent, warm, articulate native Tamil speaker with natural South Indian intonation and cadence'
+        : 'Clear, fluent, articulate and friendly speaker';
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash-lite-tts',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: cleanText,
+                speechMetadata: {
+                  style: promptStyle,
+                },
+              },
+            ],
+          },
+        ],
+        config: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: voice || 'Kore' },
+            },
+          },
+        },
+      });
+
+      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (base64Audio) {
+        const wavBase64 = pcmToWav(base64Audio, 24000);
+        return res.json({
+          audioUrl: `data:audio/wav;base64,${wavBase64}`,
+          format: 'wav',
+          source: 'gemini-3.8-flash-lite-tts',
+          sampleRate: 24000,
+        });
+      }
+    } catch (err: any) {
+      console.warn('Gemini TTS attempt failed, routing to native stream fallback:', err?.message || err);
+    }
+  }
+
+  // Fallback to streaming native TTS proxy
+  const proxyUrl = `/api/voice/proxy-tts?text=${encodeURIComponent(cleanText)}&lang=${lang}`;
+  return res.json({
+    audioUrl: proxyUrl,
+    format: 'mp3',
+    source: 'native-stream-fallback',
+  });
+});
+
+// 2. High-Quality Native TTS Stream Proxy (bypasses browser CORS & English voice mix-up)
+app.get('/api/voice/proxy-tts', async (req: Request, res: Response) => {
+  const text = (req.query.text as string) || '';
+  const lang = (req.query.lang as string) || 'ta';
+
+  if (!text) {
+    return res.status(400).send('No text provided');
+  }
+
+  try {
+    const safeText = text.slice(0, 200);
+    const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(
+      safeText
+    )}&tl=${lang}&client=tw-ob`;
+
+    const fetchResponse = await fetch(googleTtsUrl, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        Referer: 'https://translate.google.com/',
+      },
+    });
+
+    if (!fetchResponse.ok) {
+      throw new Error(`TTS upstream returned status ${fetchResponse.status}`);
+    }
+
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+
+    const arrayBuffer = await fetchResponse.arrayBuffer();
+    return res.end(Buffer.from(arrayBuffer));
+  } catch (err: any) {
+    console.warn('Proxy TTS error:', err?.message || err);
+    return res.status(500).send('TTS streaming failed');
+  }
+});
+
+// 3. Gemini Conversational Turn Generator (Ultra-fluent Tamil & Regional Dialogue)
+app.post('/api/voice/assistant-chat', async (req: Request, res: Response) => {
+  const {
+    userSpeech,
+    activeLang = 'ta',
+    district = 'Chennai',
+    state = 'Tamil Nadu',
+    step = 'ask_problem',
+    previousProblemText = '',
+  } = req.body as {
+    userSpeech: string;
+    activeLang?: string;
+    district?: string;
+    state?: string;
+    step?: string;
+    previousProblemText?: string;
+  };
+
+  const text = (userSpeech || '').trim();
+  if (!text) {
+    return res.status(400).json({ error: 'userSpeech is required' });
+  }
+
+  // If Gemini API is available, ask Gemini to respond with authentic, natural Tamil conversational speech
+  if (apiKey) {
+    try {
+      const isTamil = activeLang === 'ta';
+      const prompt = `You are GovInsight's Tamil Voice AI Buddy (மக்கள் சேவை ஏஐ நண்பன்).
+The citizen is speaking to you.
+User Spoken Words: "${text}"
+Current Dialogue Stage: "${step}" (previous info: "${previousProblemText}")
+Citizen Location Context: ${district}, ${state}
+Language: ${isTamil ? 'Pure, highly fluent Tamil (தூய மற்றும் இயல்பான பேச்சுத்தமிழ்)' : activeLang}
+
+GOAL:
+Provide an empathetic, fluent, warm, and natural conversational response.
+If the citizen just greeted ("வணக்கம்", "ஹலோ"), respond with a warm greeting asking what civic problem they are facing in their area.
+If the citizen is confirming submission ("சரி", "அனுப்பு", "ஓகே", "ஆமா"), confirm that their complaint has been registered and dispatched to the authorities with high priority.
+If the citizen described a problem (pothole, water leak, garbage, power cut, hospital road flood, etc.):
+1. Acknowledge the problem warmly in natural Tamil (e.g. "வணக்கம்! உங்கள் பகுதியில் சாலை சேதம் ஏற்பட்டு மக்கள் அவதிப்படுவதாக கூறியுள்ளீர்கள். இதை நகராட்சி நெடுஞ்சாலைத்துறைக்கு உடனடி புகாராக அனுப்பவா? 'சரி அனுப்பு' என்று சொல்லுங்கள்!").
+2. Extract the category, subcategory, urgency/criticality (CRITICAL, HIGH, MEDIUM), department, and landmark.
+
+Return JSON ONLY with this schema:
+{
+  "aiVoiceReply": "Warm, crystal-clear, fluent Tamil text to speak to citizen",
+  "category": "Standard category name",
+  "subcategory": "Specific problem name in Tamil",
+  "criticality": "CRITICAL" | "HIGH" | "MEDIUM",
+  "recommendedDepartment": "Responsible government department in Tamil",
+  "extractedLandmark": "Landmark or area mentioned, or fallback to ${district}",
+  "isReadyToSubmit": boolean (true if user described a problem and needs confirmation),
+  "isGreeting": boolean (true if user only said hello/greeting)
+}`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: prompt,
+        config: {
+          systemInstruction:
+            'You are the GovInsight Voice AI Assistant. You converse with citizens in ultra-fluent, respectful, natural regional languages. When speaking Tamil, use 100% natural, correct, fluent Tamil that sounds human, polite, and reassuring.',
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              aiVoiceReply: { type: Type.STRING },
+              category: { type: Type.STRING },
+              subcategory: { type: Type.STRING },
+              criticality: { type: Type.STRING, enum: ['CRITICAL', 'HIGH', 'MEDIUM'] },
+              recommendedDepartment: { type: Type.STRING },
+              extractedLandmark: { type: Type.STRING },
+              isReadyToSubmit: { type: Type.BOOLEAN },
+              isGreeting: { type: Type.BOOLEAN },
+            },
+            required: [
+              'aiVoiceReply',
+              'category',
+              'subcategory',
+              'criticality',
+              'recommendedDepartment',
+              'extractedLandmark',
+              'isReadyToSubmit',
+            ],
+          },
+        },
+      });
+
+      const responseText = response.text;
+      if (responseText) {
+        const parsed = JSON.parse(responseText);
+        return res.json({
+          ...parsed,
+          source: 'gemini-3.8-flash',
+        });
+      }
+    } catch (err: any) {
+      console.warn('Gemini assistant chat fallback notice:', err?.message || err);
+    }
+  }
+
+  // Fallback to rule engine response
+  return res.json({
+    fallback: true,
+    note: 'Fallback to local conversational engine',
+  });
+});
+
 // Setup Vite middleware in dev or static files in production
 async function startServer() {
   if (process.env.NODE_ENV === 'production') {

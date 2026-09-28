@@ -9,7 +9,7 @@ import {
   limit,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
-import { GovernmentPolicy } from '../types';
+import { GovernmentPolicy, PolicyPriority } from '../types';
 
 const POLICIES_COLLECTION = 'policies';
 const READ_POLICIES_KEY = 'govinsight_read_policies_v1';

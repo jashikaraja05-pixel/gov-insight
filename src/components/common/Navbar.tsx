@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { GovInsightLogo } from './GovInsightLogo';
 import { SUPPORTED_LANGUAGES, COUNTRY_PROFILES, t } from '../../services/i18n';
 import { SupportedLanguage, CountryProfile } from '../../types';
-import { Globe, Shield, Users, Building2, ChevronDown, Check, Sparkles, Menu, X, Radio, MessageSquare } from 'lucide-react';
+import { Globe, Shield, Users, Building2, ChevronDown, Check, Sparkles, Menu, X, Radio, MessageSquare, Activity } from 'lucide-react';
 
 interface NavbarProps {
   currentView: 'landing' | 'auth' | 'people' | 'government';
@@ -13,6 +13,7 @@ interface NavbarProps {
   onCountryChange: (country: CountryProfile) => void;
   onOpenResponsibleAi: () => void;
   onOpenFeedback?: () => void;
+  onOpenDiagnostics?: () => void;
   isLoggedIn?: boolean;
 }
 
@@ -25,6 +26,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onCountryChange,
   onOpenResponsibleAi,
   onOpenFeedback,
+  onOpenDiagnostics,
   isLoggedIn = false,
 }) => {
   const [isLangOpen, setIsLangOpen] = useState(false);
@@ -44,6 +46,18 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Right Action Tools: Language, Country & AI Oversight */}
         <div className="flex items-center gap-2.5">
+          {/* Language Diagnostics Tool for Developers & QA */}
+          {onOpenDiagnostics && (
+            <button
+              onClick={onOpenDiagnostics}
+              title="Test Language Output Consistency & Linguistic Accuracy"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-950/40 hover:bg-blue-900/50 border border-blue-500/30 text-[11px] font-medium text-blue-300 transition-colors cursor-pointer"
+            >
+              <Activity className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
+              <span className="hidden md:inline">Language Diagnostics</span>
+            </button>
+          )}
+
           {/* User Feedback Button */}
           {onOpenFeedback && (
             <button
@@ -242,6 +256,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             <Building2 className="w-4 h-4 text-red-400" />
             <span>{t('govPortal', currentLanguage.code)}</span>
           </button>
+          {onOpenDiagnostics && (
+            <button
+              onClick={() => {
+                onOpenDiagnostics();
+                setIsMobileMenuOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3.5 py-2.5 rounded-lg text-sm font-semibold text-blue-300 hover:bg-white/5"
+            >
+              <Activity className="w-4 h-4 text-blue-400" />
+              <span>Language Diagnostics (Dev/QA)</span>
+            </button>
+          )}
         </div>
       )}
     </header>

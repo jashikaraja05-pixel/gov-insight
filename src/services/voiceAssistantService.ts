@@ -693,21 +693,21 @@ export function categorizeCivicProblem(
 export const INITIAL_DIALOGUE_STATE: DialogueState = {
   step: 'greeting',
   problemText: '',
-  category: CIVIC_LANG_METADATA.ta.categoryRoads,
-  subcategory: 'சாலை பள்ளம் மற்றும் சேதம்',
+  category: CIVIC_LANG_METADATA.en.categoryRoads,
+  subcategory: 'Pothole and Road Damage',
   extractedLandmark: '',
   criticality: 'HIGH',
-  recommendedDepartment: CIVIC_LANG_METADATA.ta.deptRoads,
-  lastAiReply: CIVIC_LANG_METADATA.ta.greeting,
-  activeLang: 'ta',
+  recommendedDepartment: CIVIC_LANG_METADATA.en.deptRoads,
+  lastAiReply: CIVIC_LANG_METADATA.en.greeting,
+  activeLang: 'en',
 };
 
 // Conversational Turn Manager: Friendly AI Companion
 export function processConversationalTurn(
   userSpeech: string,
   state: DialogueState,
-  preferredLang: SupportedCivicLang = 'ta',
-  fallbackDistrict: string = 'சென்னை'
+  preferredLang: SupportedCivicLang = 'en',
+  fallbackDistrict: string = 'Chennai'
 ): {
   nextState: DialogueState;
   aiSpeechReply: string;
@@ -720,14 +720,14 @@ export function processConversationalTurn(
   const detectedLangFromSpeech = detectLanguageFromSpeech(text);
   const langSwitch = isLanguageSwitchCommand(text);
 
-  let activeLang = state.activeLang || preferredLang || 'ta';
+  let activeLang = state.activeLang || preferredLang || 'en';
   if (langSwitch.isSwitch) {
     activeLang = langSwitch.targetLang;
   } else if (detectedLangFromSpeech) {
     activeLang = detectedLangFromSpeech;
   }
 
-  const meta = CIVIC_LANG_METADATA[activeLang] || CIVIC_LANG_METADATA.ta;
+  const meta = CIVIC_LANG_METADATA[activeLang] || CIVIC_LANG_METADATA.en;
 
   // 2. If user specifically said "Tamil la pesala", acknowledge and switch language immediately!
   if (langSwitch.isSwitch && text.length < 35) {
@@ -808,7 +808,7 @@ export function processConversationalTurn(
 // Single Turn Processor for standard form
 export function processCitizenVoice(
   spokenText: string,
-  preferredLang: string = 'ta'
+  preferredLang: string = 'en'
 ): VoiceAssistantAnalysis {
   const text = spokenText.trim();
 
@@ -818,9 +818,9 @@ export function processCitizenVoice(
     (detected as SupportedCivicLang) ||
     ((preferredLang as SupportedCivicLang) in CIVIC_LANG_METADATA
       ? (preferredLang as SupportedCivicLang)
-      : 'ta');
+      : 'en');
 
-  const meta = CIVIC_LANG_METADATA[activeLang] || CIVIC_LANG_METADATA.ta;
+  const meta = CIVIC_LANG_METADATA[activeLang] || CIVIC_LANG_METADATA.en;
 
   if (isGreetingOnly(text)) {
     return {
@@ -855,8 +855,9 @@ export function processCitizenVoice(
   };
 }
 
-// Audio Engine for Crystal-Clear Native Speech Output
+// Audio Engine for Crystal-Clear Native Speech Output (Gemini AI TTS & Natural Stream)
 let activeAudioElement: HTMLAudioElement | null = null;
+let activeAudioContext: AudioContext | null = null;
 
 export function stopAIAssistantVoice(): void {
   if (activeAudioElement) {
@@ -868,6 +869,14 @@ export function stopAIAssistantVoice(): void {
     }
     activeAudioElement = null;
   }
+  if (activeAudioContext) {
+    try {
+      activeAudioContext.close();
+    } catch {
+      // ignore
+    }
+    activeAudioContext = null;
+  }
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     try {
       window.speechSynthesis.cancel();
@@ -877,12 +886,106 @@ export function stopAIAssistantVoice(): void {
   }
 }
 
-export function speakAIAssistantVoice(
+// Find a genuine native voice (NEVER fall back to English for Tamil or Indian languages)
+function findStrictNativeVoice(langCode: string, bcpLocale: string): SpeechSynthesisVoice | null {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices || voices.length === 0) return null;
+
+  const code = langCode.toLowerCase();
+  const bcp = bcpLocale.toLowerCase();
+
+  // For Tamil: strictly check that the voice is Tamil
+  if (code === 'ta') {
+    return (
+      voices.find(
+        (v) =>
+          (v.lang.toLowerCase().startsWith('ta') ||
+            v.name.toLowerCase().includes('tamil') ||
+            v.name.includes('தமிழ்')) &&
+          !v.name.toLowerCase().includes('english')
+      ) || null
+    );
+  }
+
+  // For Malayalam: strictly check Malayalam
+  if (code === 'ml') {
+    return (
+      voices.find(
+        (v) =>
+          (v.lang.toLowerCase().startsWith('ml') ||
+            v.name.toLowerCase().includes('malayalam') ||
+            v.name.includes('മലയാളം')) &&
+          !v.name.toLowerCase().includes('english')
+      ) || null
+    );
+  }
+
+  // For Telugu:
+  if (code === 'te') {
+    return (
+      voices.find(
+        (v) =>
+          (v.lang.toLowerCase().startsWith('te') ||
+            v.name.toLowerCase().includes('telugu') ||
+            v.name.includes('తెలుగు')) &&
+          !v.name.toLowerCase().includes('english')
+      ) || null
+    );
+  }
+
+  // For Kannada:
+  if (code === 'kn') {
+    return (
+      voices.find(
+        (v) =>
+          (v.lang.toLowerCase().startsWith('kn') ||
+            v.name.toLowerCase().includes('kannada') ||
+            v.name.includes('ಕನ್ನಡ')) &&
+          !v.name.toLowerCase().includes('english')
+      ) || null
+    );
+  }
+
+  // For Hindi:
+  if (code === 'hi') {
+    return (
+      voices.find(
+        (v) =>
+          (v.lang.toLowerCase().startsWith('hi') ||
+            v.name.toLowerCase().includes('hindi') ||
+            v.name.includes('हिन्दी')) &&
+          !v.name.toLowerCase().includes('english')
+      ) || null
+    );
+  }
+
+  // For English:
+  if (code === 'en') {
+    return (
+      voices.find(
+        (v) =>
+          v.lang.toLowerCase().startsWith('en') ||
+          v.lang.toLowerCase() === bcp
+      ) || null
+    );
+  }
+
+  return voices.find((v) => v.lang.toLowerCase().startsWith(code)) || null;
+}
+
+/**
+ * High-Fidelity Speech Player for Fluent Tamil and Multi-Lingual Civic AI
+ * 1. Checks Gemini AI TTS (/api/voice/gemini-tts) for human-like fluency
+ * 2. Checks browser SpeechSynthesis ONLY IF a verified native Tamil voice exists
+ * 3. Falls back to pristine streaming audio proxy (/api/voice/proxy-tts)
+ */
+export async function speakAIAssistantVoice(
   text: string,
-  langCode: string = 'ta',
+  langCode: string = 'en',
   onStart?: () => void,
   onEnd?: () => void
-): void {
+): Promise<void> {
   stopAIAssistantVoice();
 
   if (typeof window === 'undefined') {
@@ -896,7 +999,6 @@ export function speakAIAssistantVoice(
     return;
   }
 
-  // Map 2-letter codes to primary BCP 47 tags
   const bcpMap: Record<string, string> = {
     ta: 'ta-IN',
     ml: 'ml-IN',
@@ -907,83 +1009,161 @@ export function speakAIAssistantVoice(
   };
   const targetBcp = bcpMap[langCode] || 'ta-IN';
 
-  // 1. Try Native Web SpeechSynthesis First
+  // 1. Try Gemini TTS / Server Speech API first for fluent, authentic native pronunciation
+  try {
+    const res = await fetch('/api/voice/gemini-tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: cleanText,
+        lang: langCode,
+        voice: 'Kore',
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.audioUrl) {
+        playDirectAudioUrl(data.audioUrl, onStart, onEnd);
+        return;
+      }
+    }
+  } catch (err) {
+    console.warn('Gemini TTS fetch notice, attempting voice synthesis alternatives:', err);
+  }
+
+  // 2. Try browser SpeechSynthesis ONLY IF a genuine native voice exists
+  // NEVER allow an English voice to read Tamil or Indian languages!
   if ('speechSynthesis' in window) {
     try {
       window.speechSynthesis.resume();
-      const utterance = new SpeechSynthesisUtterance(cleanText);
-      utterance.lang = targetBcp;
-      utterance.rate = 0.92;
-      utterance.pitch = 1.0;
+      const verifiedVoice = findStrictNativeVoice(langCode, targetBcp);
 
-      const voices = window.speechSynthesis.getVoices();
-      const matchingVoice = voices.find(
-        (v) =>
-          v.lang.toLowerCase() === targetBcp.toLowerCase() ||
-          v.lang.toLowerCase().startsWith(langCode.toLowerCase())
-      );
-      if (matchingVoice) {
-        utterance.voice = matchingVoice;
+      if (verifiedVoice) {
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        utterance.voice = verifiedVoice;
+        utterance.lang = verifiedVoice.lang || targetBcp;
+        utterance.rate = 0.95;
+        utterance.pitch = 1.0;
+
+        let ended = false;
+        const safeEnd = () => {
+          if (!ended) {
+            ended = true;
+            if (onEnd) onEnd();
+          }
+        };
+
+        utterance.onstart = () => {
+          if (onStart) onStart();
+        };
+        utterance.onend = safeEnd;
+        utterance.onerror = () => {
+          playStreamingProxyAudio(cleanText, langCode, onStart, onEnd);
+        };
+
+        window.speechSynthesis.speak(utterance);
+        return;
       }
-
-      let ended = false;
-      const safeEnd = () => {
-        if (!ended) {
-          ended = true;
-          if (onEnd) onEnd();
-        }
-      };
-
-      utterance.onstart = () => {
-        if (onStart) onStart();
-      };
-      utterance.onend = safeEnd;
-      utterance.onerror = () => {
-        playFallbackAudio(cleanText, langCode, onStart, onEnd);
-      };
-
-      window.speechSynthesis.speak(utterance);
-      return;
     } catch {
       // fallback
     }
   }
 
-  // 2. Direct Fallback Audio Stream
-  playFallbackAudio(cleanText, langCode, onStart, onEnd);
+  // 3. Pristine Streaming Audio Proxy Fallback (Guaranteed crystal-clear native Tamil)
+  playStreamingProxyAudio(cleanText, langCode, onStart, onEnd);
 }
 
-function playFallbackAudio(
-  text: string,
-  langCode: string,
+// Play audio directly from URL (Data URL or streaming endpoint)
+function playDirectAudioUrl(
+  url: string,
   onStart?: () => void,
   onEnd?: () => void
 ): void {
   try {
-    const safeText = text.slice(0, 180);
-    const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(
-      safeText
-    )}&tl=${langCode || 'ta'}&client=tw-ob`;
-
-    const audio = new Audio(audioUrl);
+    const audio = new Audio(url);
     activeAudioElement = audio;
 
+    let hasStarted = false;
     audio.onplay = () => {
+      hasStarted = true;
       if (onStart) onStart();
     };
+
     audio.onended = () => {
       activeAudioElement = null;
       if (onEnd) onEnd();
     };
+
     audio.onerror = () => {
       activeAudioElement = null;
       if (onEnd) onEnd();
     };
 
-    audio.play().catch(() => {
-      if (onEnd) onEnd();
+    audio.play().catch((err) => {
+      console.warn('Audio play error, finishing:', err);
+      if (!hasStarted && onEnd) onEnd();
     });
-  } catch {
+  } catch (err) {
+    console.warn('Audio player instantiation error:', err);
     if (onEnd) onEnd();
   }
 }
+
+// Streaming Native Proxy Audio
+function playStreamingProxyAudio(
+  text: string,
+  langCode: string,
+  onStart?: () => void,
+  onEnd?: () => void
+): void {
+  const safeText = text.slice(0, 200);
+  const proxyUrl = `/api/voice/proxy-tts?text=${encodeURIComponent(safeText)}&lang=${langCode || 'en'}`;
+  playDirectAudioUrl(proxyUrl, onStart, onEnd);
+}
+
+/**
+ * Fetch fluent, contextual conversational turn from Gemini AI in natural Tamil
+ */
+export async function fetchGeminiConversationalTurn(
+  userSpeech: string,
+  state: DialogueState,
+  district: string = 'Chennai',
+  stateName: string = 'Tamil Nadu'
+): Promise<{
+  aiVoiceReply: string;
+  category: string;
+  subcategory: string;
+  criticality: 'CRITICAL' | 'HIGH' | 'MEDIUM';
+  recommendedDepartment: string;
+  extractedLandmark: string;
+  isReadyToSubmit: boolean;
+  isGreeting: boolean;
+  source: string;
+} | null> {
+  try {
+    const res = await fetch('/api/voice/assistant-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userSpeech,
+        activeLang: state.activeLang || 'en',
+        district,
+        state: stateName,
+        step: state.step,
+        previousProblemText: state.problemText,
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (!data.fallback && data.aiVoiceReply) {
+        return data;
+      }
+    }
+  } catch (err) {
+    console.warn('Gemini conversational turn API notice:', err);
+  }
+  return null;
+}
+

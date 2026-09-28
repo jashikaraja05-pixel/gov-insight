@@ -48,11 +48,15 @@ export interface UserFeedback {
   userName?: string;
   userEmail?: string;
   userRole?: 'citizen' | 'government' | 'visitor';
-  category?: 'platform' | 'government_action' | 'civic_service' | 'ai_accuracy' | 'resolution' | 'general' | string;
+  category?: 'platform' | 'government_action' | 'civic_service' | 'ai_accuracy' | 'resolution' | 'general' | 'policy_feedback' | string;
   rating: number; // 1 to 5
   comment: string;
   issueId?: string;
   issueTitle?: string;
+  policyId?: string;
+  policyTitle?: string;
+  inputMode?: 'voice' | 'text';
+  language?: string;
   resolved?: boolean;
   createdAt: string;
 }
@@ -289,5 +293,46 @@ export const CIVIC_SECTOR_THEMES: CivicSectorTheme[] = [
     accentColor: '#f43f5e',
     description: 'Hazardous trees, lack of speed breakers near schools, fire hazard, pedestrian safeguards',
   },
+];
+
+// Predictive Policy Impact Analysis Types
+export type PotentialImpactScore = 'Low' | 'Medium' | 'High';
+
+export interface PolicyCitizenImpact {
+  policyId: string;
+  policyTitle: string;
+  potentialImpactScore: PotentialImpactScore;
+  numericScore: number; // 0 to 100
+  impactSummary: string; // Tailored explanation based on citizen's stated interests
+  keyBenefits: string[];
+  actionSteps: string[];
+  urgencyLevel: 'Immediate' | 'Upcoming' | 'Informational';
+  relevantInterestMatches: string[];
+  riskOrWatchpoints: string[];
+  analyzedAt: string;
+  source: 'gemini-3.8-flash' | 'predictive-heuristic-engine';
+}
+
+export interface CitizenInterestsProfile {
+  topics: string[];
+  customInterests?: string;
+  occupation?: string;
+  householdType?: string;
+  district?: string;
+  state?: string;
+  ward?: string;
+}
+
+export const AVAILABLE_CIVIC_INTERESTS: { id: string; label: string; icon: string; category: string }[] = [
+  { id: 'water_drainage', label: 'Drinking Water & Drainage', icon: 'Droplets', category: 'Water & Drainage' },
+  { id: 'roads_transit', label: 'Roads & Daily Commute', icon: 'Construction', category: 'Roads & Infrastructure' },
+  { id: 'solar_energy', label: 'Rooftop Solar & Power Subsidies', icon: 'Zap', category: 'Electricity & Power' },
+  { id: 'flood_monsoon', label: 'Monsoon Floods & Storm Drains', icon: 'ShieldAlert', category: 'Disaster Preparedness' },
+  { id: 'healthcare_phc', label: 'Public Healthcare & Hospitals', icon: 'HeartPulse', category: 'Healthcare' },
+  { id: 'schools_education', label: 'Public Schools & Education', icon: 'GraduationCap', category: 'Education' },
+  { id: 'sanitation_waste', label: 'Sanitation & Garbage Clearance', icon: 'Trash2', category: 'Sanitation' },
+  { id: 'ev_green_transit', label: 'Electric Vehicles & Clean Mobility', icon: 'Sparkles', category: 'Infrastructure' },
+  { id: 'pds_ration', label: 'PDS Ration & Food Security', icon: 'Utensils', category: 'Food Safety' },
+  { id: 'senior_safety', label: 'Pedestrian Safety & Senior Care', icon: 'ShieldCheck', category: 'Public Safety' },
 ];
 

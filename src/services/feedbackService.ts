@@ -15,46 +15,7 @@ import { UserFeedback } from '../types';
 const FEEDBACK_COLLECTION = 'feedback';
 const LOCAL_STORAGE_KEY = 'govinsight_user_feedback_cache_v1';
 
-// Seed initial feedback if empty so developers and officials see data right away
-export const INITIAL_FEEDBACK_ITEMS: UserFeedback[] = [
-  {
-    id: 'fb_1740001001',
-    userId: 'citizen_rajesh_chennai',
-    userName: 'Rajesh K.',
-    userRole: 'citizen',
-    category: 'government_action',
-    rating: 5,
-    comment: 'Pothole on Velachery Main Road was fixed within 48 hours of AI escalation. Excellent coordination!',
-    issueId: 'GI-2026-000101',
-    issueTitle: 'Deep Pothole & Caved Drain on Main Arterial Road',
-    resolved: true,
-    createdAt: '2026-09-20T10:30:00.000Z',
-  },
-  {
-    id: 'fb_1740001002',
-    userId: 'citizen_priya_madurai',
-    userName: 'Priya Sundaram',
-    userRole: 'citizen',
-    category: 'civic_service',
-    rating: 4,
-    comment: 'Water supply line restored promptly. App alerts kept the community informed at every stage.',
-    issueId: 'GI-2026-000102',
-    issueTitle: 'Main Drinking Water Pipeline Burst',
-    resolved: true,
-    createdAt: '2026-09-21T14:15:00.000Z',
-  },
-  {
-    id: 'fb_1740001003',
-    userId: 'official_officer_tamil',
-    userName: 'K. Thirunavukkarasu',
-    userRole: 'government',
-    category: 'government_action',
-    rating: 5,
-    comment: 'Priority AI dispatch helped our engineers identify the critical water pipeline failure immediately.',
-    resolved: true,
-    createdAt: '2026-09-22T08:45:00.000Z',
-  },
-];
+export const INITIAL_FEEDBACK_ITEMS: UserFeedback[] = [];
 
 /**
  * Stores a user feedback entry into Firebase Firestore
@@ -122,13 +83,9 @@ export async function fetchUserFeedback(): Promise<UserFeedback[]> {
       return feedbackList;
     }
 
-    // If Firestore has no documents yet, return local cache or initial seeds
+    // If Firestore has no documents yet, return local cache
     const cached = getFromLocalCache();
-    if (cached.length > 0) {
-      return cached;
-    }
-
-    return INITIAL_FEEDBACK_ITEMS;
+    return cached.length > 0 ? cached : [];
   } catch (error) {
     // Try fallback to local cache
     const cached = getFromLocalCache();
@@ -136,6 +93,7 @@ export async function fetchUserFeedback(): Promise<UserFeedback[]> {
       return cached;
     }
     handleFirestoreError(error, OperationType.LIST, path);
+    return [];
   }
 }
 
@@ -162,9 +120,9 @@ export function subscribeToUserFeedback(
           updateLocalCacheAll(feedbackList);
           callback(feedbackList);
         } else {
-          // Fall back to cache or seeds if collection is empty
+          // Fall back to cache if collection is empty
           const cached = getFromLocalCache();
-          callback(cached.length > 0 ? cached : INITIAL_FEEDBACK_ITEMS);
+          callback(cached.length > 0 ? cached : []);
         }
       },
       (error) => {
