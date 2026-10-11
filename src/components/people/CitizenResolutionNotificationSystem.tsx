@@ -108,8 +108,12 @@ export const CitizenResolutionNotificationSystem: React.FC<Props> = ({
       speechMessage = `Great news! Your civic grievance ${notif.issueId}, titled ${notif.issueTitle}, has been officially marked as Resolved. Please verify the cleared site and submit your rating.`;
     }
 
-    speakCivicText(speechMessage, currentLanguage.code, () => {
-      setIsVoiceAnnouncing(false);
+    speakCivicText({
+      text: speechMessage,
+      langCode: currentLanguage.code,
+      onEnd: () => {
+        setIsVoiceAnnouncing(false);
+      },
     });
   };
 
